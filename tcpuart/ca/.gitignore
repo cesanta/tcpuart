@@ -1,0 +1,8 @@
+ca/*
+*.csr
+*.old
+*.srl
+*.tmp
+0*.pem
+ca.key
+index.txt*

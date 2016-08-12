@@ -1,0 +1,4 @@
+[submodule "mongoose-iot"]
+	path = mongoose-iot
+	url = https://github.com/cesanta/mongoose-iot.git
+	branch = master

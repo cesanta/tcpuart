@@ -1,0 +1,11 @@
+APP = tcpuart
+APP_MODULES = src
+APP_FS_PATH = ./fs
+SYS_CONF_DEFAULTS = $(APP_FS_PATH)/conf_sys_defaults.json
+APP_CONF_DEFAULTS = $(APP_FS_PATH)/conf_app_defaults.json
+APP_CFLAGS = -DCS_LOG_TS_DIFF -DMG_LWIP_SSL_RECV_MBUF_LIMIT=1024 -DESP_DEBUG_UART=1
+SSL = Krypton
+SJ_ENABLE_JS = 0
+SJ_ENABLE_CLUBBY = 0
+
+include $(REPO_PATH)/fw/platforms/esp8266/Makefile.build

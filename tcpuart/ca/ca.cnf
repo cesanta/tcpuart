@@ -1,0 +1,22 @@
+
+[ca]
+default_ca = test_ca
+
+[test_ca]
+certificate = ca.pem
+private_key = ca.key
+dir = ./ca
+new_certs_dir = ./ca
+default_days = 3560
+default_md = sha256
+database = ./ca/index.txt
+serial = ./ca/ca.srl
+policy = ca_policy
+copy_extensions = copy
+x509_extensions = x509_extensions
+
+[ca_policy]
+commonName = supplied
+
+[x509_extensions]
+basicConstraints = CA:FALSE

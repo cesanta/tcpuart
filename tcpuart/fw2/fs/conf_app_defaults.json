@@ -1,0 +1,53 @@
+{
+  "tcp": {
+    "listener": {
+      "port": 8910,
+      "tls": {
+        "cert": "",
+        "ca_cert": ""
+      }
+    },
+    "client": {
+      "remote_addr": "",
+      "tls": {
+        "cert": "",
+        "ca_cert": "",
+        "server_name": ""
+      },
+      "reconnect_interval": 5
+    },
+    "status_interval_ms": 1000,
+    "tx_buf_size": 2048,
+    "rexmit": {
+      "initial_timeout_ms": 200,
+      "adaptive": true
+    },
+    "keepalive": {
+      "idle": 60,
+      "interval": 10,
+      "count": 6
+    }
+  },
+  "uart": {
+    "uart_no": 0,
+    "baud_rate": 115200,
+    "rx_buf_size": 1460,
+    "rx_fc_ena": false,
+    "rx_fifo_full_thresh": 100,
+    "rx_fifo_fc_thresh": 110,
+    "rx_fifo_alarm": 20,
+    "rx_linger_micros": 20,
+    "tx_buf_size": 2048,
+    "tx_fc_ena": false,
+    "tx_fifo_empty_thresh": 40,
+    "tx_fifo_full_thresh": 120,
+    "swap_rxcts_txrts": false,
+    "status_interval_ms": 1000
+  },
+  "misc": {
+    "beeper": {
+      "timeout_seconds": 0,
+      "gpio_no": -1
+    }
+  }
+}

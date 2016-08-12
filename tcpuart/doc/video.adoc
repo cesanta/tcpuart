@@ -1,0 +1,41 @@
+= Video voice over
+
+Hi everybody, this is Evelyn and Rojer from Cesanta.
+In this 2-minute video we are going to show you how to connect any
+microcontroller to the TCP/IP network without embedded network programming.
+
+For that, we demonstrate TCP to UART bridge developed by Cesanta, which
+bridges microcontoller's UART to the external machine on TCP/IP network.
+The TCPUART bridge is based on ESP8266 WiFi module.
+
+To make things easy to demonstrate, we:
+
+- [video should show an overlay link to our downloads]
+  Download and run FlashNChips flashing tool with TCPUART firmware
+- Take NodeMCU development board which has ESP8266 module
+- [rojer connect nodemcu] Connect NodeMCU board to the laptop via USB
+- This makes ESP8266 UART connected to the FlashNChips. Therefore,
+  FlashNChips tool will act as an external microcontoller that we want
+  to make connected to TCP/IP network
+- [rojer flash firmware]
+  Flash TCPUART firmware. This takes a few seconds. When firmware is flashed,
+  WiFi module starts a WiFi network called TCP_UART, and runs a
+  web server with configuration interface
+- Let us connect to that WiFi network, and take a look at the configuration
+- [rojer to show] We see that WiFi module starts a listening server on port 8910.
+- Any external program can connect to that listening port.
+- When connected, all data that is sent and received, will be passed to the
+  microcontoller's UART.
+- Let's demonstrate that by connecting to the listening server with
+  `netcat` utility. [rojer runs netcat side-by-side with FlashNChips]
+- Now we're connected. Let's send some data to the microcontoller. [type hello]
+- A microcontoller, which is simulated by FlashNChips tool, has received the
+  data.
+- Now, let's send some data from the microcontoller to the external program
+  [rojer type something]
+- We see that microcontoller can send data back
+
+So this video demonstrates how TCPUART module can implement
+wireless network communication between any machine
+and arbitrary microcontoller by simple serial UART communication and
+without writing a single line of networking code.
