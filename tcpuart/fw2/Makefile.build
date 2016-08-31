@@ -9,4 +9,4 @@ SJ_ENABLE_JS = 0
 SJ_ENABLE_CLUBBY = 0
 INCLUDE_SYS_PARAMS_DEFAULTS = 1
 
-include $(REPO_PATH)/fw/platforms/esp8266/Makefile.build
+include $(REPO_PATH)/fw/platforms/$(PLATFORM)/Makefile.build

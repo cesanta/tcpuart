@@ -17,6 +17,7 @@
       "reconnect_interval": 5
     },
     "status_interval_ms": 1000,
+    "rx_buf_size": 2048,
     "tx_buf_size": 2048,
     "rexmit": {
       "initial_timeout_ms": 200,

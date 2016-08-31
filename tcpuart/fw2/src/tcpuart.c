@@ -1,7 +1,5 @@
 #include "common/cs_dbg.h"
 
-#include "user_interface.h"
-
 #include "fw/src/sj_app.h"
 #include "fw/src/sj_hal.h"
 #include "fw/src/sj_mongoose.h"
@@ -9,8 +7,17 @@
 #include "fw/src/sj_sys_config.h"
 #include "fw/src/mg_uart.h"
 
+#if CS_PLATFORM == CS_P_ESP_LWIP
+#include "user_interface.h"
 #include "common/platforms/esp8266/esp_mg_net_if.h"
 #include "fw/platforms/esp8266/user/esp_uart.h"
+#elif CS_PLATFORM == CS_P_CC3200
+#include "hw_types.h"
+#include "driverlib/uart.h"
+#include "fw/platforms/cc3200/src/cc3200_uart.h"
+#else
+#error Unsupported platform
+#endif
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #ifndef IRAM
@@ -134,6 +141,48 @@ void check_beeper() {
   }
 }
 
+static int uart_cts(int uart_no) {
+#if CS_PLATFORM == CS_P_ESP_LWIP
+  return esp_uart_cts(uart_no);
+#elif CS_PLATFORM == CS_P_CC3200
+  return cc3200_uart_cts(uart_no);
+#endif
+}
+
+static uint32_t uart_raw_ints(int uart_no) {
+#if CS_PLATFORM == CS_P_ESP_LWIP
+  return esp_uart_raw_ints(uart_no);
+#elif CS_PLATFORM == CS_P_CC3200
+  return cc3200_uart_raw_ints(uart_no);
+#endif
+}
+
+static uint32_t uart_int_mask(int uart_no) {
+#if CS_PLATFORM == CS_P_ESP_LWIP
+  return esp_uart_int_mask(uart_no);
+#elif CS_PLATFORM == CS_P_CC3200
+  return cc3200_uart_int_mask(uart_no);
+#endif
+}
+
+int uart_rx_fifo_len(int uart_no) {
+#if CS_PLATFORM == CS_P_ESP_LWIP
+  return esp_uart_rx_fifo_len(uart_no);
+#elif CS_PLATFORM == CS_P_CC3200
+  /* It's not possible to get exact FIFO length on CC3200. */
+  return UARTCharsAvail(cc3200_uart_get_base(uart_no));
+#endif
+}
+
+int uart_tx_fifo_len(int uart_no) {
+#if CS_PLATFORM == CS_P_ESP_LWIP
+  return esp_uart_tx_fifo_len(uart_no);
+#elif CS_PLATFORM == CS_P_CC3200
+  /* It's not possible to get exact FIFO length on CC3200. */
+  return (UARTSpaceAvail(cc3200_uart_get_base(uart_no)) == 0);
+#endif
+}
+
 static void report_status(struct mg_connection *nc, int force) {
   double now = mg_time();
   if (nc != NULL && s_tcfg->status_interval_ms > 0 &&
@@ -161,12 +210,12 @@ static void report_status(struct mg_connection *nc, int force) {
             uart_no, s->ints - ps->ints, s->rx_ints - ps->rx_ints,
             s->tx_ints - ps->tx_ints, us->rx_enabled,
             s->rx_bytes - ps->rx_bytes, us->rx_buf.used,
-            esp_uart_rx_fifo_len(uart_no), s->rx_overflows - ps->rx_overflows,
+            uart_rx_fifo_len(uart_no), s->rx_overflows - ps->rx_overflows,
             s->rx_linger_conts - ps->rx_linger_conts,
             s->tx_bytes - ps->tx_bytes, us->tx_buf.used,
-            esp_uart_tx_fifo_len(uart_no), s->tx_throttles - ps->tx_throttles,
-            system_get_free_heap_size(), READ_PERI_REG(UART_INT_RAW(uart_no)),
-            READ_PERI_REG(UART_INT_ENA(uart_no)), esp_uart_cts(uart_no));
+            uart_tx_fifo_len(uart_no), s->tx_throttles - ps->tx_throttles,
+            sj_get_free_heap_size(), uart_raw_ints(uart_no),
+            uart_int_mask(uart_no), uart_cts(uart_no));
     memcpy(ps, s, sizeof(*s));
     s_last_uart_status_report = now;
   }
@@ -246,10 +295,19 @@ static void tu_conn_handler(struct mg_connection *nc, int ev, void *ev_data) {
 static void tu_set_conn(struct mg_connection *nc) {
   LOG(LL_INFO, ("New conn: %p", nc));
   nc->handler = tu_conn_handler;
+#if CS_PLATFORM == CS_P_ESP_LWIP
   mg_lwip_set_keepalive_params(nc, s_tcfg->keepalive.idle,
                                s_tcfg->keepalive.interval,
                                s_tcfg->keepalive.count);
+#elif CS_PLATFORM == CS_P_CC3200
+  /* On CC3200 keep-alive is enabled by default and can only be disabled. */
+  SlSockKeepalive_t opt;
+  opt.KeepaliveEnabled = (s_tcfg->keepalive.idle > 0);
+  sl_SetSockOpt(nc->sock, SL_SOL_SOCKET, SL_SO_KEEPALIVE, (_u8 *) &opt,
+                sizeof(opt));
+#endif
   s_last_tcp_status_report = mg_time();
+  if (s_tcfg->rx_buf_size > 0) nc->recv_mbuf_limit = s_tcfg->rx_buf_size;
   s_conn = nc;
   mg_uart_set_rx_enabled(s_ucfg->uart_no, 1);
 }
@@ -323,10 +381,17 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
   }
 }
 
+#if CS_PLATFORM == CS_P_CC3200
+int sj_pwm_set(int pin, int period, int duty) {
+  /* TODO(rojer) */
+  return 0;
+}
+#endif
+
 enum mg_app_init_result sj_app_init() {
   s_mcfg = &get_cfg()->misc;
   s_last_activity = mg_time();
-  LOG(LL_INFO, ("TCPUART init, SDK %s", system_get_sdk_version()));
+  LOG(LL_INFO, ("TCPUART init"));
   if (!init_tcp(&get_cfg()->tcp)) return MG_APP_INIT_ERROR;
   if (!init_uart(&get_cfg()->uart)) return MG_APP_INIT_ERROR;
   return MG_APP_INIT_SUCCESS;
