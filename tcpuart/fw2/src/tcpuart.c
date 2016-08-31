@@ -2,31 +2,39 @@
 
 #include "user_interface.h"
 
-#include "common/platforms/esp8266/esp_mg_net_if.h"
-#include "fw/platforms/esp8266/user/esp_sj_uart.h"
 #include "fw/src/sj_app.h"
 #include "fw/src/sj_hal.h"
 #include "fw/src/sj_mongoose.h"
 #include "fw/src/sj_pwm.h"
 #include "fw/src/sj_sys_config.h"
+#include "fw/src/mg_uart.h"
+
+#include "common/platforms/esp8266/esp_mg_net_if.h"
+#include "fw/platforms/esp8266/user/esp_uart.h"
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#ifndef IRAM
+#define IRAM
+#endif
 
 static struct sys_config_tcp *s_tcfg = NULL;
 static struct sys_config_uart *s_ucfg = NULL;
 static struct sys_config_misc *s_mcfg = NULL;
 
+static struct mg_uart_state *s_us = NULL;
 static struct mg_connection *s_conn = NULL;
 static struct mg_connection *s_mgr_conn = NULL;
 static struct mg_connection *s_client_conn = NULL;
 static double s_last_connect_attempt = 0;
 static struct mbuf s_tcp_rx_tail;
 static double s_last_activity = 0;
-static double s_last_status_report = 0;
+static double s_last_tcp_status_report = 0;
+static double s_last_uart_status_report = 0;
+static struct mg_uart_stats s_prev_stats;
 
 static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data);
 static void tu_conn_handler(struct mg_connection *nc, int ev, void *ev_data);
-static IRAM void tu_dispatch_uart(int uart_no);
+static IRAM void tu_dispatcher(struct mg_uart_state *us);
 
 static int init_tcp(struct sys_config_tcp *cfg) {
   char listener_spec[100];
@@ -58,9 +66,7 @@ static int init_tcp(struct sys_config_tcp *cfg) {
 }
 
 static int init_uart(struct sys_config_uart *ucfg) {
-  struct esp_uart_config *cfg = calloc(1, sizeof(*cfg));
-  cfg->uart_no = ucfg->uart_no;
-  cfg->dispatch_cb = tu_dispatch_uart;
+  struct mg_uart_config *cfg = mg_uart_default_config();
   cfg->baud_rate = ucfg->baud_rate;
   cfg->rx_buf_size = ucfg->rx_buf_size;
   cfg->rx_fc_ena = ucfg->rx_fc_ena;
@@ -73,22 +79,22 @@ static int init_uart(struct sys_config_uart *ucfg) {
   cfg->tx_fifo_empty_thresh = ucfg->tx_fifo_empty_thresh;
   cfg->tx_fifo_full_thresh = ucfg->tx_fifo_full_thresh;
   cfg->swap_rxcts_txrts = ucfg->swap_rxcts_txrts;
-  cfg->status_interval_ms = ucfg->status_interval_ms;
-  if (!esp_uart_init(cfg)) {
+  //  cfg->status_interval_ms = ucfg->status_interval_ms;
+  s_us = mg_uart_init(ucfg->uart_no, cfg, tu_dispatcher, NULL);
+  if (s_us == NULL) {
     LOG(LL_ERROR, ("UART init failed"));
     free(cfg);
     return 0;
   }
-  LOG(LL_INFO, ("UART%d configured: %d fc %d/%d", cfg->uart_no, cfg->baud_rate,
+  LOG(LL_INFO, ("UART%d configured: %d fc %d/%d", ucfg->uart_no, cfg->baud_rate,
                 cfg->rx_fc_ena, cfg->tx_fc_ena));
   s_ucfg = ucfg;
   return 1;
 }
 
-size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, int uart_no) {
+size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct mg_uart_state *us) {
   size_t len = 0;
-  cs_rbuf_t *utxb = esp_uart_tx_buf(uart_no);
-  esp_uart_dispatch_tx_top(uart_no);
+  cs_rbuf_t *utxb = &us->tx_buf;
   len = MIN(mb->len, utxb->avail);
   if (len > 0) {
     cs_rbuf_append(utxb, mb->buf, len);
@@ -128,17 +134,66 @@ void check_beeper() {
   }
 }
 
-static void tcp_report_status(struct mg_connection *nc, int force) {
-  if (s_tcfg->status_interval_ms <= 0) return;
+static void report_status(struct mg_connection *nc, int force) {
   double now = mg_time();
-  if (force ||
-      (now - s_last_status_report) * 1000 >= s_tcfg->status_interval_ms) {
+  if (nc != NULL && s_tcfg->status_interval_ms > 0 &&
+      (force ||
+       (now - s_last_tcp_status_report) * 1000 >= s_tcfg->status_interval_ms)) {
     char addr[32];
     mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
                         MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
     fprintf(stderr, "TCP %p %s f %d rb %d sb %d\n", nc, addr, (int) nc->flags,
             (int) nc->recv_mbuf.len, (int) nc->send_mbuf.len);
-    s_last_status_report = now;
+    s_last_tcp_status_report = now;
+  }
+  if (s_us != NULL && s_ucfg->status_interval_ms > 0 &&
+      (force ||
+       (now - s_last_uart_status_report) * 1000 >=
+           s_ucfg->status_interval_ms)) {
+    struct mg_uart_state *us = s_us;
+    struct mg_uart_stats *s = &us->stats;
+    struct mg_uart_stats *ps = &s_prev_stats;
+    int uart_no = us->uart_no;
+    fprintf(stderr,
+            "UART%d ints %u/%u/%u; rx en %d bytes %u buf %u fifo %u, ovf %u, "
+            "lcs %u; "
+            "tx %u %u %u, thr %u; hf %u i 0x%03x ie 0x%03x cts %d\n",
+            uart_no, s->ints - ps->ints, s->rx_ints - ps->rx_ints,
+            s->tx_ints - ps->tx_ints, us->rx_enabled,
+            s->rx_bytes - ps->rx_bytes, us->rx_buf.used,
+            esp_uart_rx_fifo_len(uart_no), s->rx_overflows - ps->rx_overflows,
+            s->rx_linger_conts - ps->rx_linger_conts,
+            s->tx_bytes - ps->tx_bytes, us->tx_buf.used,
+            esp_uart_tx_fifo_len(uart_no), s->tx_throttles - ps->tx_throttles,
+            system_get_free_heap_size(), READ_PERI_REG(UART_INT_RAW(uart_no)),
+            READ_PERI_REG(UART_INT_ENA(uart_no)), esp_uart_cts(uart_no));
+    memcpy(ps, s, sizeof(*s));
+    s_last_uart_status_report = now;
+  }
+}
+
+static IRAM void tu_dispatcher(struct mg_uart_state *us) {
+  size_t len = 0;
+  /* TCP -> UART */
+  /* Drain buffer left from a previous connection, if any. */
+  if (s_tcp_rx_tail.len > 0) {
+    tu_dispatch_tcp_to_uart(&s_tcp_rx_tail, us);
+    mbuf_trim(&s_tcp_rx_tail);
+  }
+  /* UART -> TCP */
+  if (s_conn != NULL) {
+    cs_rbuf_t *urxb = &us->rx_buf;
+    while (urxb->used > 0 &&
+           (len = (s_tcfg->tx_buf_size - s_conn->send_mbuf.len)) > 0) {
+      uint8_t *data;
+      len = cs_rbuf_get(urxb, len, &data);
+      mbuf_append(&s_conn->send_mbuf, data, len);
+      cs_rbuf_consume(urxb, len);
+    }
+    if (len > 0) {
+      LOG(LL_DEBUG, ("UART -> %d -> TCP", (int) len));
+      s_last_activity = mg_time();
+    }
   }
 }
 
@@ -149,43 +204,25 @@ static void tu_conn_handler(struct mg_connection *nc, int ev, void *ev_data) {
 
   switch (ev) {
     case MG_EV_POLL:
-    case MG_EV_RECV:
-    case MG_EV_SEND: {
-      int uart_no = s_ucfg->uart_no;
-      size_t len = 0;
-      /* UART -> TCP */
-      {
-        esp_uart_dispatch_rx_top(uart_no);
-        cs_rbuf_t *urxb = esp_uart_rx_buf(uart_no);
-        while (urxb->used > 0 &&
-               (len = (s_tcfg->tx_buf_size - nc->send_mbuf.len)) > 0) {
-          uint8_t *data;
-          len = cs_rbuf_get(urxb, len, &data);
-          mbuf_append(&nc->send_mbuf, data, len);
-          cs_rbuf_consume(urxb, len);
-        }
-        if (len > 0) {
-          LOG(LL_DEBUG, ("UART -> %d -> TCP %d %d", (int) len,
-                         rx_fifo_len(uart_no), tx_fifo_len(uart_no)));
-          s_last_activity = mg_time();
-        }
-      }
+    case MG_EV_RECV: {
+      /* If there is a tail from previous conn, we need it to drain first. */
+      if (s_tcp_rx_tail.len > 0) break;
       /* TCP -> UART */
-      len = tu_dispatch_tcp_to_uart(&nc->recv_mbuf, uart_no);
+      size_t len = tu_dispatch_tcp_to_uart(&nc->recv_mbuf, s_us);
       if (len > 0) {
-        LOG(LL_DEBUG, ("UART <- %d <- TCP %d %d", len, rx_fifo_len(uart_no),
-                       tx_fifo_len(uart_no)));
+        LOG(LL_DEBUG, ("UART <- %d <- TCP", (int) len));
         s_last_activity = mg_time();
       }
-      esp_uart_dispatch_bottom(uart_no);
-      tcp_report_status(nc, 0 /* force */);
+    }
+    case MG_EV_SEND: {
+      mg_uart_schedule_dispatcher(s_ucfg->uart_no);
       break;
     }
     case MG_EV_CLOSE: {
       LOG(LL_INFO, ("%p closed", nc));
-      tcp_report_status(nc, 1 /* force */);
+      report_status(nc, 1 /* force */);
       if (nc == s_conn) {
-        esp_uart_set_rx_enabled(s_ucfg->uart_no, 0);
+        mg_uart_set_rx_enabled(s_ucfg->uart_no, 0);
         if (nc->recv_mbuf.len > 0) {
           /* Rescue the bytes remaining in the rx buffer - if we have space. */
           if (s_tcp_rx_tail.len == 0) {
@@ -212,9 +249,9 @@ static void tu_set_conn(struct mg_connection *nc) {
   mg_lwip_set_keepalive_params(nc, s_tcfg->keepalive.idle,
                                s_tcfg->keepalive.interval,
                                s_tcfg->keepalive.count);
-  s_last_status_report = mg_time();
+  s_last_tcp_status_report = mg_time();
   s_conn = nc;
-  esp_uart_set_rx_enabled(s_ucfg->uart_no, 1);
+  mg_uart_set_rx_enabled(s_ucfg->uart_no, 1);
 }
 
 static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
@@ -232,19 +269,9 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
       break;
     }
     case MG_EV_POLL: {
-      int uart_no = s_ucfg->uart_no;
       check_beeper();
+      report_status(s_conn, 0 /* force */);
       if (s_conn == NULL) {
-        /* Pump UART buffers if we have no active connection. */
-        if (uart_no >= 0) {
-          esp_uart_dispatch_rx_top(uart_no);
-          if (s_tcp_rx_tail.len > 0) {
-            tu_dispatch_tcp_to_uart(&s_tcp_rx_tail, uart_no);
-            mbuf_trim(&s_tcp_rx_tail);
-          }
-          esp_uart_dispatch_tx_top(uart_no);
-          esp_uart_dispatch_bottom(uart_no);
-        }
         /* Initiate outgoing connection, if configured. */
         if (s_client_conn == NULL && s_tcfg->client.remote_addr != NULL &&
             (mg_time() - s_last_connect_attempt) >=
@@ -293,16 +320,6 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
         s_last_connect_attempt = mg_time();
       }
     }
-  }
-}
-
-/* Note: runs in ISR context, whole thing (including subs) must be in IRAM. */
-static IRAM void tu_dispatch_uart(int uart_no) {
-  (void) uart_no;
-  if (s_conn != NULL) {
-    mg_lwip_mgr_schedule_poll(s_conn->mgr);
-  } else if (s_mgr_conn != NULL) {
-    mg_lwip_mgr_schedule_poll(s_mgr_conn->mgr);
   }
 }
 
