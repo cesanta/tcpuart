@@ -50,7 +50,7 @@ double timediff_ms(const struct timeval t1, const struct timeval t2) {
          1000.0;
 }
 
-void maybe_print_stats() {
+void maybe_print_stats(void) {
   struct timeval cur;
   if (gettimeofday(&cur, NULL) < 0) {
     perror("gettimeofday");

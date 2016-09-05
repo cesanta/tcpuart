@@ -110,7 +110,7 @@ size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct mg_uart_state *us) {
   return len;
 }
 
-void check_beeper() {
+void check_beeper(void) {
   static int beeping_on_gpio = -1;
   static double last_change = 0;
   if (beeping_on_gpio >= 0) {
@@ -388,7 +388,7 @@ int sj_pwm_set(int pin, int period, int duty) {
 }
 #endif
 
-enum mg_app_init_result sj_app_init() {
+enum mg_app_init_result sj_app_init(void) {
   s_mcfg = &get_cfg()->misc;
   s_last_activity = mg_time();
   LOG(LL_INFO, ("TCPUART init"));
