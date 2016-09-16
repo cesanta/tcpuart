@@ -5,6 +5,9 @@
       "tls": {
         "cert": "",
         "ca_cert": ""
+      },
+      "ws": {
+        "enable": false
       }
     },
     "client": {
@@ -13,6 +16,10 @@
         "cert": "",
         "ca_cert": "",
         "server_name": ""
+      },
+      "ws": {
+        "enable": false,
+        "uri": "/tcpuart/????????????"
       },
       "reconnect_interval": 5
     },

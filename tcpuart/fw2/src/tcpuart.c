@@ -1,9 +1,12 @@
+#include <stdbool.h>
+
 #include "common/cs_dbg.h"
 
 #include "fw/src/sj_app.h"
 #include "fw/src/sj_hal.h"
 #include "fw/src/sj_mongoose.h"
 #include "fw/src/sj_pwm.h"
+#include "fw/src/sj_timers.h"
 #include "fw/src/sj_sys_config.h"
 #include "fw/src/mg_uart.h"
 
@@ -40,7 +43,10 @@ static double s_last_uart_status_report = 0;
 static struct mg_uart_stats s_prev_stats;
 
 static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data);
-static void tu_conn_handler(struct mg_connection *nc, int ev, void *ev_data);
+static void tu_conn_mgr_timer_cb(void *arg);
+static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
+                                void *ev_data);
+static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data);
 static IRAM void tu_dispatcher(struct mg_uart_state *us);
 
 static int init_tcp(struct sys_config_tcp *cfg) {
@@ -52,22 +58,19 @@ static int init_tcp(struct sys_config_tcp *cfg) {
     if (cfg->listener.tls.cert) {
       bopts.ssl_cert = cfg->listener.tls.cert;
     }
-  } else {
-    /*
-     * User doesn't want us to listen on a port, but we need a persistent
-     * connection to manage UART buffers when there isn't any active one.
-     * I'm not proud of this, but this is the easiest way to achieve that:
-     * listen on a port that nobody is going to reach from the outside.
-     */
-    strcpy(listener_spec, "127.0.0.1:1234");
   }
-  LOG(LL_INFO, ("Listening on %s (%s)", listener_spec,
-                (bopts.ssl_cert ? bopts.ssl_cert : "-")));
+  LOG(LL_INFO, ("Listening on %s (%s, %s)", listener_spec,
+                (cfg->listener.ws.enable ? "WS" : ""),
+                (bopts.ssl_cert ? bopts.ssl_cert : "no SSL")));
   s_mgr_conn = mg_bind_opt(&sj_mgr, listener_spec, tu_conn_mgr, bopts);
   if (s_mgr_conn == NULL) {
     LOG(LL_ERROR, ("Failed to create listener"));
     return 0;
   }
+  if (cfg->listener.ws.enable) {
+    mg_set_protocol_http_websocket(s_mgr_conn);
+  }
+  sj_set_c_timer(200 /* ms */, true /* repeat */, tu_conn_mgr_timer_cb, NULL);
   s_tcfg = cfg;
   return 1;
 }
@@ -86,7 +89,6 @@ static int init_uart(struct sys_config_uart *ucfg) {
   cfg->tx_fifo_empty_thresh = ucfg->tx_fifo_empty_thresh;
   cfg->tx_fifo_full_thresh = ucfg->tx_fifo_full_thresh;
   cfg->swap_rxcts_txrts = ucfg->swap_rxcts_txrts;
-  //  cfg->status_interval_ms = ucfg->status_interval_ms;
   s_us = mg_uart_init(ucfg->uart_no, cfg, tu_dispatcher, NULL);
   if (s_us == NULL) {
     LOG(LL_ERROR, ("UART init failed"));
@@ -106,6 +108,7 @@ size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct mg_uart_state *us) {
   if (len > 0) {
     cs_rbuf_append(utxb, mb->buf, len);
     mbuf_remove(mb, len);
+    mg_uart_schedule_dispatcher(s_ucfg->uart_no);
   }
   return len;
 }
@@ -231,22 +234,38 @@ static IRAM void tu_dispatcher(struct mg_uart_state *us) {
   }
   /* UART -> TCP */
   if (s_conn != NULL) {
+    bool is_ws = (s_conn->flags & MG_F_IS_WEBSOCKET);
     cs_rbuf_t *urxb = &us->rx_buf;
+    int num_sent = 0;
     while (urxb->used > 0 &&
            (len = (s_tcfg->tx_buf_size - s_conn->send_mbuf.len)) > 0) {
       uint8_t *data;
       len = cs_rbuf_get(urxb, len, &data);
-      mbuf_append(&s_conn->send_mbuf, data, len);
+      if (is_ws) {
+        mg_send_websocket_frame(s_conn, WEBSOCKET_OP_BINARY, data, len);
+      } else {
+        mbuf_append(&s_conn->send_mbuf, data, len);
+      }
       cs_rbuf_consume(urxb, len);
+      num_sent += len;
     }
-    if (len > 0) {
-      LOG(LL_DEBUG, ("UART -> %d -> TCP", (int) len));
+    if (num_sent > 0) {
+      LOG(LL_DEBUG, ("UART -> %d -> %s", num_sent, (is_ws ? "WS" : "TCP")));
       s_last_activity = mg_time();
+    }
+    /* See if we can unthrottle TCP RX */
+    if (s_conn->recv_mbuf_limit == 0 && us->tx_buf.avail > 0) {
+      if (s_tcfg->rx_buf_size > 0) {
+        s_conn->recv_mbuf_limit = s_tcfg->rx_buf_size;
+      } else {
+        s_conn->recv_mbuf_limit = ~0;
+      }
     }
   }
 }
 
-static void tu_conn_handler(struct mg_connection *nc, int ev, void *ev_data) {
+static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
+                                void *ev_data) {
   (void) ev_data;
 
   sj_wdt_feed();
@@ -262,6 +281,7 @@ static void tu_conn_handler(struct mg_connection *nc, int ev, void *ev_data) {
         LOG(LL_DEBUG, ("UART <- %d <- TCP", (int) len));
         s_last_activity = mg_time();
       }
+      break;
     }
     case MG_EV_SEND: {
       mg_uart_schedule_dispatcher(s_ucfg->uart_no);
@@ -292,9 +312,55 @@ static void tu_conn_handler(struct mg_connection *nc, int ev, void *ev_data) {
   }
 }
 
-static void tu_set_conn(struct mg_connection *nc) {
-  LOG(LL_INFO, ("New conn: %p", nc));
-  nc->handler = tu_conn_handler;
+static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
+                               void *ev_data) {
+  sj_wdt_feed();
+
+  switch (ev) {
+    case MG_EV_WEBSOCKET_FRAME: {
+      struct websocket_message *wm = (struct websocket_message *) ev_data;
+      size_t len = 0;
+      LOG(LL_DEBUG, ("ws frame %d", (int) wm->size));
+      cs_rbuf_t *utxb = &s_us->tx_buf;
+      len = MIN(wm->size, utxb->avail);
+      if (len > 0) {
+        cs_rbuf_append(utxb, wm->data, len);
+        LOG(LL_DEBUG, ("UART <- %d <- WS", (int) len));
+        s_last_activity = mg_time();
+      }
+      if (len < wm->size) {
+        /* UART buffer is full. Save the rest of the frame and throttle RX. */
+        size_t tail_len = (wm->size - len);
+        LOG(LL_DEBUG, ("%d bytes added to tail", (int) tail_len));
+        mbuf_append(&s_tcp_rx_tail, wm->data + len, tail_len);
+        nc->recv_mbuf_limit = 0;
+      }
+      break;
+    }
+    case MG_EV_SEND: {
+      mg_uart_schedule_dispatcher(s_ucfg->uart_no);
+      break;
+    }
+    case MG_EV_CLOSE: {
+      LOG(LL_INFO, ("%p closed", nc));
+      report_status(nc, 1 /* force */);
+      if (nc == s_conn) {
+        mg_uart_set_rx_enabled(s_ucfg->uart_no, 0);
+        s_conn = NULL;
+      }
+      break;
+    }
+  }
+}
+
+static void tu_set_conn(struct mg_connection *nc, bool ws) {
+  LOG(LL_INFO, ("New conn: %p%s", nc, (ws ? " (WS)" : "")));
+  if (s_conn != NULL) {
+    LOG(LL_INFO, ("Evicting %p", s_conn));
+    s_conn->flags |= MG_F_SEND_AND_CLOSE;
+    s_conn = NULL;
+  }
+  nc->handler = (ws ? tu_ws_conn_handler : tu_tcp_conn_handler);
 #if CS_PLATFORM == CS_P_ESP_LWIP
   mg_lwip_set_keepalive_params(nc, s_tcfg->keepalive.idle,
                                s_tcfg->keepalive.interval,
@@ -319,41 +385,20 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
       mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
                           MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
       LOG(LL_INFO, ("%p Connection from %s", nc, addr));
-      if (s_conn != NULL) {
-        LOG(LL_INFO, ("Evicting %p", s_conn));
-        s_conn->flags |= MG_F_SEND_AND_CLOSE;
+      if (!s_tcfg->listener.ws.enable) {
+        tu_set_conn(nc, false /* ws */);
+      } else {
+        /* Wait for handshake */
       }
-      tu_set_conn(nc);
       break;
     }
-    case MG_EV_POLL: {
-      check_beeper();
-      report_status(s_conn, 0 /* force */);
-      if (s_conn == NULL) {
-        /* Initiate outgoing connection, if configured. */
-        if (s_client_conn == NULL && s_tcfg->client.remote_addr != NULL &&
-            (mg_time() - s_last_connect_attempt) >=
-                s_tcfg->client.reconnect_interval) {
-          const char *error;
-          struct mg_connect_opts copts;
-          memset(&copts, 0, sizeof(copts));
-          copts.ssl_cert = s_tcfg->client.tls.cert;
-          copts.ssl_ca_cert = s_tcfg->client.tls.ca_cert;
-          copts.ssl_server_name = s_tcfg->client.tls.server_name;
-          copts.error_string = &error;
-          LOG(LL_INFO, ("%p Connecting to %s (%s %s %s)", s_client_conn,
-                        s_tcfg->client.remote_addr,
-                        (copts.ssl_cert ? copts.ssl_cert : "-"),
-                        (copts.ssl_ca_cert ? copts.ssl_ca_cert : "-"),
-                        (copts.ssl_server_name ? copts.ssl_server_name : "-")));
-          s_last_connect_attempt = mg_time();
-          s_client_conn = mg_connect_opt(nc->mgr, s_tcfg->client.remote_addr,
-                                         tu_conn_mgr, copts);
-          if (s_client_conn == NULL) {
-            LOG(LL_ERROR, ("Connection error: %s", error));
-          }
-        }
-      }
+    case MG_EV_WEBSOCKET_HANDSHAKE_REQUEST: {
+      LOG(LL_INFO, ("%p WS handshake request", nc));
+      break;
+    }
+    case MG_EV_WEBSOCKET_HANDSHAKE_DONE: {
+      LOG(LL_INFO, ("%p WS handshake done", nc));
+      tu_set_conn(nc, true /* ws */);
       break;
     }
     case MG_EV_CONNECT: {
@@ -361,7 +406,16 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
       LOG(LL_INFO, ("%p Connect result: %d", nc, res));
       if (res == 0) {
         if (s_conn == NULL) {
-          tu_set_conn(nc);
+          if (!s_tcfg->client.ws.enable) {
+            tu_set_conn(nc, false /* ws */);
+          } else {
+            char *uri = strdup(s_tcfg->client.ws.uri);
+            sj_expand_mac_address_placeholders(uri);
+            LOG(LL_INFO, ("%p Sending WS handshake to %s", nc, uri));
+            mg_set_protocol_http_websocket(nc);
+            mg_send_websocket_handshake(nc, uri, NULL);
+            free(uri);
+          }
         } else {
           /* We already have a connection (probably accepted one while
            * connecting), drop it. */
@@ -371,6 +425,7 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
       } else {
         /* Do nothing, wait for close event. */
       }
+      break;
     }
     case MG_EV_CLOSE: {
       if (nc == s_client_conn) {
@@ -379,6 +434,37 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
       }
     }
   }
+}
+
+static void tu_conn_mgr_timer_cb(void *arg) {
+  check_beeper();
+  report_status(s_conn, 0 /* force */);
+  if (s_conn == NULL) {
+    /* Initiate outgoing connection, if configured. */
+    if (s_client_conn == NULL && s_tcfg->client.remote_addr != NULL &&
+        (mg_time() - s_last_connect_attempt) >=
+            s_tcfg->client.reconnect_interval) {
+      const char *error;
+      struct mg_connect_opts copts;
+      memset(&copts, 0, sizeof(copts));
+      copts.ssl_cert = s_tcfg->client.tls.cert;
+      copts.ssl_ca_cert = s_tcfg->client.tls.ca_cert;
+      copts.ssl_server_name = s_tcfg->client.tls.server_name;
+      copts.error_string = &error;
+      LOG(LL_INFO,
+          ("%p Connecting to %s (%s %s %s)", s_client_conn,
+           s_tcfg->client.remote_addr, (copts.ssl_cert ? copts.ssl_cert : "-"),
+           (copts.ssl_ca_cert ? copts.ssl_ca_cert : "-"),
+           (copts.ssl_server_name ? copts.ssl_server_name : "-")));
+      s_last_connect_attempt = mg_time();
+      s_client_conn = mg_connect_opt(&sj_mgr, s_tcfg->client.remote_addr,
+                                     tu_conn_mgr, copts);
+      if (s_client_conn == NULL) {
+        LOG(LL_ERROR, ("Connection error: %s", error));
+      }
+    }
+  }
+  (void) arg;
 }
 
 #if CS_PLATFORM == CS_P_CC3200
