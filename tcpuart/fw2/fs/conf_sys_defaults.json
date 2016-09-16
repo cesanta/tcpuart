@@ -40,6 +40,26 @@
   "tls": {
     "ca_file": "ca.pem"
   },
+  "clubby": {
+    "connect_on_boot": true,
+    "server_address": "",
+    "device_id": "dummy",
+    "device_psk": "",
+    "reconnect_timeout_min": 10,
+    "reconnect_timeout_max": 60,
+    "request_timeout": 300,
+    "memory_limit": 15360,
+    "max_queue_size": 25,
+    "ssl_server_name": "",
+    "ssl_ca_file": "",
+    "ssl_client_cert_file": "",
+    "verify_timeouts_period": 30,
+    "uart": {
+      "uart_no": -1,
+      "baud_rate": 115200,
+      "fc_enable": false
+    }
+  },
   "debug": {
     "level": 2,
     "stdout_uart": 1,
@@ -53,7 +73,8 @@
   "console": {
     "mem_buf_size" : 256,
     "log_file": "",
-    "log_file_size": 2048
+    "log_file_size": 2048,
+    "send_to_cloud" : false
   },
   "conf_acl": "*"
 }
