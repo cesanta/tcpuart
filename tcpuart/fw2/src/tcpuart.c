@@ -2,12 +2,12 @@
 
 #include "common/cs_dbg.h"
 
-#include "fw/src/sj_app.h"
-#include "fw/src/sj_hal.h"
-#include "fw/src/sj_mongoose.h"
-#include "fw/src/sj_pwm.h"
-#include "fw/src/sj_timers.h"
-#include "fw/src/sj_sys_config.h"
+#include "fw/src/mg_app.h"
+#include "fw/src/mg_hal.h"
+#include "fw/src/mg_mongoose.h"
+#include "fw/src/mg_pwm.h"
+#include "fw/src/mg_timers.h"
+#include "fw/src/mg_sys_config.h"
 #include "fw/src/mg_uart.h"
 
 #if CS_PLATFORM == CS_P_ESP_LWIP
@@ -62,7 +62,7 @@ static int init_tcp(struct sys_config_tcp *cfg) {
   LOG(LL_INFO, ("Listening on %s (%s, %s)", listener_spec,
                 (cfg->listener.ws.enable ? "WS" : ""),
                 (bopts.ssl_cert ? bopts.ssl_cert : "no SSL")));
-  s_mgr_conn = mg_bind_opt(&sj_mgr, listener_spec, tu_conn_mgr, bopts);
+  s_mgr_conn = mg_bind_opt(mg_get_mgr(), listener_spec, tu_conn_mgr, bopts);
   if (s_mgr_conn == NULL) {
     LOG(LL_ERROR, ("Failed to create listener"));
     return 0;
@@ -70,7 +70,7 @@ static int init_tcp(struct sys_config_tcp *cfg) {
   if (cfg->listener.ws.enable) {
     mg_set_protocol_http_websocket(s_mgr_conn);
   }
-  sj_set_c_timer(200 /* ms */, true /* repeat */, tu_conn_mgr_timer_cb, NULL);
+  mg_set_c_timer(200 /* ms */, true /* repeat */, tu_conn_mgr_timer_cb, NULL);
   s_tcfg = cfg;
   return 1;
 }
@@ -120,7 +120,7 @@ void check_beeper(void) {
     if (s_mcfg->beeper.timeout_seconds == 0 ||
         s_mcfg->beeper.gpio_no != beeping_on_gpio ||
         (mg_time() - last_change > 0.9)) {
-      sj_pwm_set(beeping_on_gpio, 0, 0);
+      mg_pwm_set(beeping_on_gpio, 0, 0);
       beeping_on_gpio = -1;
       last_change = mg_time();
       return;
@@ -137,7 +137,7 @@ void check_beeper(void) {
   if ((now - s_last_activity > s_mcfg->beeper.timeout_seconds) &&
       (now - last_change > 0.9)) {
     beeping_on_gpio = s_mcfg->beeper.gpio_no;
-    sj_pwm_set(beeping_on_gpio, 250, 125); /* BEEEP! (4 KHz) */
+    mg_pwm_set(beeping_on_gpio, 250, 125); /* BEEEP! (4 KHz) */
     last_change = now;
     LOG(LL_WARN,
         ("No activity for %d seconds - BEEP!", (int) (now - s_last_activity)));
@@ -217,7 +217,7 @@ static void report_status(struct mg_connection *nc, int force) {
             s->rx_linger_conts - ps->rx_linger_conts,
             s->tx_bytes - ps->tx_bytes, us->tx_buf.used,
             uart_tx_fifo_len(uart_no), s->tx_throttles - ps->tx_throttles,
-            sj_get_free_heap_size(), uart_raw_ints(uart_no),
+            mg_get_free_heap_size(), uart_raw_ints(uart_no),
             uart_int_mask(uart_no), uart_cts(uart_no));
     memcpy(ps, s, sizeof(*s));
     s_last_uart_status_report = now;
@@ -268,7 +268,7 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
                                 void *ev_data) {
   (void) ev_data;
 
-  sj_wdt_feed();
+  mg_wdt_feed();
 
   switch (ev) {
     case MG_EV_POLL:
@@ -314,7 +314,7 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
 
 static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
                                void *ev_data) {
-  sj_wdt_feed();
+  mg_wdt_feed();
 
   switch (ev) {
     case MG_EV_WEBSOCKET_FRAME: {
@@ -410,7 +410,7 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
             tu_set_conn(nc, false /* ws */);
           } else {
             char *uri = strdup(s_tcfg->client.ws.uri);
-            sj_expand_mac_address_placeholders(uri);
+            mg_expand_mac_address_placeholders(uri);
             LOG(LL_INFO, ("%p Sending WS handshake to %s", nc, uri));
             mg_set_protocol_http_websocket(nc);
             mg_send_websocket_handshake(nc, uri, NULL);
@@ -457,7 +457,7 @@ static void tu_conn_mgr_timer_cb(void *arg) {
            (copts.ssl_ca_cert ? copts.ssl_ca_cert : "-"),
            (copts.ssl_server_name ? copts.ssl_server_name : "-")));
       s_last_connect_attempt = mg_time();
-      s_client_conn = mg_connect_opt(&sj_mgr, s_tcfg->client.remote_addr,
+      s_client_conn = mg_connect_opt(mg_get_mgr(), s_tcfg->client.remote_addr,
                                      tu_conn_mgr, copts);
       if (s_client_conn == NULL) {
         LOG(LL_ERROR, ("Connection error: %s", error));
@@ -468,13 +468,13 @@ static void tu_conn_mgr_timer_cb(void *arg) {
 }
 
 #if CS_PLATFORM == CS_P_CC3200
-int sj_pwm_set(int pin, int period, int duty) {
+int mg_pwm_set(int pin, int period, int duty) {
   /* TODO(rojer) */
   return 0;
 }
 #endif
 
-enum mg_app_init_result sj_app_init(void) {
+enum mg_app_init_result mg_app_init(void) {
   s_mcfg = &get_cfg()->misc;
   s_last_activity = mg_time();
   LOG(LL_INFO, ("TCPUART init"));
