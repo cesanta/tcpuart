@@ -34,7 +34,8 @@
       "idle": 60,
       "interval": 10,
       "count": 6
-    }
+    },
+    "evict_old": true
   },
   "uart": {
     "uart_no": 0,

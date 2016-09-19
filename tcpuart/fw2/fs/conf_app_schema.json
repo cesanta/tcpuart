@@ -26,6 +26,7 @@
   ["tcp.keepalive.interval", "i", {"title": "Send at this interval (sec)"}],
   ["tcp.tx_buf_size", "i", {"title": "TX buffer size"}],
   ["tcp.status_interval_ms", "i", {"title": "Status interval (ms)"}],
+  ["tcp.evict_old", "b", {"title": "New connection evicts old"}],
 
   ["uart", "o", {"title": "UART settings"}],
   ["uart.baud_rate", "i", {"title": "Baud rate"}],

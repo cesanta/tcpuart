@@ -33,8 +33,8 @@ static struct sys_config_misc *s_mcfg = NULL;
 
 static struct mg_uart_state *s_us = NULL;
 static struct mg_connection *s_conn = NULL;
-static struct mg_connection *s_mgr_conn = NULL;
 static struct mg_connection *s_client_conn = NULL;
+static struct mg_connection *s_listener_conn = NULL;
 static double s_last_connect_attempt = 0;
 static struct mbuf s_tcp_rx_tail;
 static double s_last_activity = 0;
@@ -58,17 +58,18 @@ static int init_tcp(struct sys_config_tcp *cfg) {
     if (cfg->listener.tls.cert) {
       bopts.ssl_cert = cfg->listener.tls.cert;
     }
-  }
-  LOG(LL_INFO, ("Listening on %s (%s, %s)", listener_spec,
-                (cfg->listener.ws.enable ? "WS" : ""),
-                (bopts.ssl_cert ? bopts.ssl_cert : "no SSL")));
-  s_mgr_conn = mg_bind_opt(mg_get_mgr(), listener_spec, tu_conn_mgr, bopts);
-  if (s_mgr_conn == NULL) {
-    LOG(LL_ERROR, ("Failed to create listener"));
-    return 0;
-  }
-  if (cfg->listener.ws.enable) {
-    mg_set_protocol_http_websocket(s_mgr_conn);
+    LOG(LL_INFO, ("Listening on %s (%s, %s)", listener_spec,
+                  (cfg->listener.ws.enable ? "WS" : ""),
+                  (bopts.ssl_cert ? bopts.ssl_cert : "no SSL")));
+    s_listener_conn =
+        mg_bind_opt(mg_get_mgr(), listener_spec, tu_conn_mgr, bopts);
+    if (s_listener_conn == NULL) {
+      LOG(LL_ERROR, ("Failed to create listener"));
+      return 0;
+    }
+    if (cfg->listener.ws.enable) {
+      mg_set_protocol_http_websocket(s_listener_conn);
+    }
   }
   mg_set_c_timer(200 /* ms */, true /* repeat */, tu_conn_mgr_timer_cb, NULL);
   s_tcfg = cfg;
@@ -307,6 +308,10 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
         }
         s_conn = NULL;
       }
+      if (nc == s_client_conn) {
+        s_client_conn = NULL;
+        s_last_connect_attempt = mg_time();
+      }
       break;
     }
   }
@@ -348,6 +353,10 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
         mg_uart_set_rx_enabled(s_ucfg->uart_no, 0);
         s_conn = NULL;
       }
+      if (nc == s_client_conn) {
+        s_client_conn = NULL;
+        s_last_connect_attempt = mg_time();
+      }
       break;
     }
   }
@@ -356,9 +365,15 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
 static void tu_set_conn(struct mg_connection *nc, bool ws) {
   LOG(LL_INFO, ("New conn: %p%s", nc, (ws ? " (WS)" : "")));
   if (s_conn != NULL) {
-    LOG(LL_INFO, ("Evicting %p", s_conn));
-    s_conn->flags |= MG_F_SEND_AND_CLOSE;
-    s_conn = NULL;
+    if (s_tcfg->evict_old) {
+      LOG(LL_INFO, ("Evicting %p", s_conn));
+      s_conn->flags |= MG_F_SEND_AND_CLOSE;
+      s_conn = NULL;
+    } else {
+      LOG(LL_INFO, ("%p already in place, dropping %p", s_conn, nc));
+      nc->flags |= MG_F_CLOSE_IMMEDIATELY;
+      return;
+    }
   }
   nc->handler = (ws ? tu_ws_conn_handler : tu_tcp_conn_handler);
 #if CS_PLATFORM == CS_P_ESP_LWIP
@@ -385,10 +400,23 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
       mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
                           MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
       LOG(LL_INFO, ("%p Connection from %s", nc, addr));
-      if (!s_tcfg->listener.ws.enable) {
-        tu_set_conn(nc, false /* ws */);
+      if (s_conn != NULL && !s_tcfg->evict_old) {
+        LOG(LL_INFO, ("%p already in place, dropping %p", s_conn, nc));
+        if (s_tcfg->listener.ws.enable) {
+          mg_sock_addr_to_str(&s_conn->sa, addr, sizeof(addr),
+                              MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
+          mg_send_response_line(nc, 409, "Content-Type: text/plain\r\n");
+          mg_printf(nc, "Existing connection: %s\r\n", addr);
+          nc->flags |= MG_F_SEND_AND_CLOSE;
+        } else {
+          nc->flags |= MG_F_CLOSE_IMMEDIATELY;
+        }
       } else {
-        /* Wait for handshake */
+        if (!s_tcfg->listener.ws.enable) {
+          tu_set_conn(nc, false /* ws */);
+        } else {
+          /* Wait for handshake */
+        }
       }
       break;
     }
@@ -439,29 +467,28 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
 static void tu_conn_mgr_timer_cb(void *arg) {
   check_beeper();
   report_status(s_conn, 0 /* force */);
-  if (s_conn == NULL) {
-    /* Initiate outgoing connection, if configured. */
-    if (s_client_conn == NULL && s_tcfg->client.remote_addr != NULL &&
-        (mg_time() - s_last_connect_attempt) >=
-            s_tcfg->client.reconnect_interval) {
-      const char *error;
-      struct mg_connect_opts copts;
-      memset(&copts, 0, sizeof(copts));
-      copts.ssl_cert = s_tcfg->client.tls.cert;
-      copts.ssl_ca_cert = s_tcfg->client.tls.ca_cert;
-      copts.ssl_server_name = s_tcfg->client.tls.server_name;
-      copts.error_string = &error;
-      LOG(LL_INFO,
-          ("%p Connecting to %s (%s %s %s)", s_client_conn,
-           s_tcfg->client.remote_addr, (copts.ssl_cert ? copts.ssl_cert : "-"),
-           (copts.ssl_ca_cert ? copts.ssl_ca_cert : "-"),
-           (copts.ssl_server_name ? copts.ssl_server_name : "-")));
-      s_last_connect_attempt = mg_time();
-      s_client_conn = mg_connect_opt(mg_get_mgr(), s_tcfg->client.remote_addr,
-                                     tu_conn_mgr, copts);
-      if (s_client_conn == NULL) {
-        LOG(LL_ERROR, ("Connection error: %s", error));
-      }
+  /* Initiate outgoing connection, if configured. */
+  if (s_conn == NULL && s_client_conn == NULL &&
+      s_tcfg->client.remote_addr != NULL &&
+      (mg_time() - s_last_connect_attempt) >=
+          s_tcfg->client.reconnect_interval) {
+    const char *error;
+    struct mg_connect_opts copts;
+    memset(&copts, 0, sizeof(copts));
+    copts.ssl_cert = s_tcfg->client.tls.cert;
+    copts.ssl_ca_cert = s_tcfg->client.tls.ca_cert;
+    copts.ssl_server_name = s_tcfg->client.tls.server_name;
+    copts.error_string = &error;
+    LOG(LL_INFO,
+        ("%p Connecting to %s (%s %s %s)", s_client_conn,
+         s_tcfg->client.remote_addr, (copts.ssl_cert ? copts.ssl_cert : "-"),
+         (copts.ssl_ca_cert ? copts.ssl_ca_cert : "-"),
+         (copts.ssl_server_name ? copts.ssl_server_name : "-")));
+    s_last_connect_attempt = mg_time();
+    s_client_conn = mg_connect_opt(mg_get_mgr(), s_tcfg->client.remote_addr,
+                                   tu_conn_mgr, copts);
+    if (s_client_conn == NULL) {
+      LOG(LL_ERROR, ("Connection error: %s", error));
     }
   }
   (void) arg;
