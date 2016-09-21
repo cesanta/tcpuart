@@ -36,6 +36,7 @@
   ["uart.rx_fifo_fc_thresh", "i", {"hide": true}],
   ["uart.rx_fifo_alarm", "i", {"hide": true}],
   ["uart.rx_linger_micros", "i", {"hide": true}],
+  ["uart.rx_throttle_when_no_net", "b", {"title": "Throttle RX when no network connection"}],
   ["uart.tx_buf_size", "i", {"title": "TX buffer size"}],
   ["uart.tx_fc_ena", "b", {"title": "TX hardware flow control (CTS)"}],
   ["uart.tx_fifo_empty_thresh", "i", {"hide": true}],

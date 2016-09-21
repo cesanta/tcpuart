@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2014-2016 Cesanta Software Limited
+ * All rights reserved
+ */
+
+#include "tcpuart.h"
+
 #include <stdbool.h>
 
 #include "common/cs_dbg.h"
@@ -49,6 +56,8 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
 static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data);
 static IRAM void tu_dispatcher(struct mg_uart_state *us);
 
+tu_uart_processor_fn tu_uart_processor;
+
 static int init_tcp(struct sys_config_tcp *cfg) {
   char listener_spec[100];
   struct mg_bind_opts bopts;
@@ -98,6 +107,9 @@ static int init_uart(struct sys_config_uart *ucfg) {
   }
   LOG(LL_INFO, ("UART%d configured: %d fc %d/%d", ucfg->uart_no, cfg->baud_rate,
                 cfg->rx_fc_ena, cfg->tx_fc_ena));
+  if (!s_ucfg->rx_throttle_when_no_net) {
+    mg_uart_set_rx_enabled(ucfg->uart_no, true);
+  }
   s_ucfg = ucfg;
   return 1;
 }
@@ -225,8 +237,32 @@ static void report_status(struct mg_connection *nc, int force) {
   }
 }
 
+static void tu_process_uart(struct mg_uart_state *us,
+                            struct mg_connection *nc) {
+  int num_sent = 0;
+  if (nc == NULL) return;
+  cs_rbuf_t *urxb = &us->rx_buf;
+  int len = 0;
+  while (urxb->used > 0 &&
+         (len = (s_tcfg->tx_buf_size - nc->send_mbuf.len)) > 0) {
+    uint8_t *data;
+    len = cs_rbuf_get(urxb, len, &data);
+    if (nc->flags & MG_F_IS_WEBSOCKET) {
+      mg_send_websocket_frame(nc, WEBSOCKET_OP_BINARY, data, len);
+    } else {
+      mg_send(nc, data, len);
+    }
+    cs_rbuf_consume(urxb, len);
+    num_sent += len;
+  }
+  if (num_sent > 0) {
+    LOG(LL_DEBUG, ("UART -> %d -> %s", num_sent,
+                   (nc->flags & MG_F_IS_WEBSOCKET ? "WS" : "TCP")));
+    s_last_activity = mg_time();
+  }
+}
+
 static IRAM void tu_dispatcher(struct mg_uart_state *us) {
-  size_t len = 0;
   /* TCP -> UART */
   /* Drain buffer left from a previous connection, if any. */
   if (s_tcp_rx_tail.len > 0) {
@@ -234,32 +270,18 @@ static IRAM void tu_dispatcher(struct mg_uart_state *us) {
     mbuf_trim(&s_tcp_rx_tail);
   }
   /* UART -> TCP */
-  if (s_conn != NULL) {
-    bool is_ws = (s_conn->flags & MG_F_IS_WEBSOCKET);
-    cs_rbuf_t *urxb = &us->rx_buf;
-    int num_sent = 0;
-    while (urxb->used > 0 &&
-           (len = (s_tcfg->tx_buf_size - s_conn->send_mbuf.len)) > 0) {
-      uint8_t *data;
-      len = cs_rbuf_get(urxb, len, &data);
-      if (is_ws) {
-        mg_send_websocket_frame(s_conn, WEBSOCKET_OP_BINARY, data, len);
-      } else {
-        mbuf_append(&s_conn->send_mbuf, data, len);
-      }
-      cs_rbuf_consume(urxb, len);
-      num_sent += len;
-    }
-    if (num_sent > 0) {
-      LOG(LL_DEBUG, ("UART -> %d -> %s", num_sent, (is_ws ? "WS" : "TCP")));
-      s_last_activity = mg_time();
-    }
-    /* See if we can unthrottle TCP RX */
-    if (s_conn->recv_mbuf_limit == 0 && us->tx_buf.avail > 0) {
-      if (s_tcfg->rx_buf_size > 0) {
-        s_conn->recv_mbuf_limit = s_tcfg->rx_buf_size;
-      } else {
-        s_conn->recv_mbuf_limit = ~0;
+  struct mg_connection *nc = s_conn;
+  cs_rbuf_t *urxb = &us->rx_buf;
+  if (urxb->used > 0) {
+    tu_process_uart(us, nc);
+    if (s_conn != NULL) {
+      /* See if we can unthrottle TCP RX */
+      if (nc->recv_mbuf_limit == 0 && us->tx_buf.avail > 0) {
+        if (s_tcfg->rx_buf_size > 0) {
+          nc->recv_mbuf_limit = s_tcfg->rx_buf_size;
+        } else {
+          nc->recv_mbuf_limit = ~0;
+        }
       }
     }
   }
@@ -292,7 +314,9 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
       LOG(LL_INFO, ("%p closed", nc));
       report_status(nc, 1 /* force */);
       if (nc == s_conn) {
-        mg_uart_set_rx_enabled(s_ucfg->uart_no, 0);
+        if (s_ucfg->rx_throttle_when_no_net) {
+          mg_uart_set_rx_enabled(s_ucfg->uart_no, false);
+        }
         if (nc->recv_mbuf.len > 0) {
           /* Rescue the bytes remaining in the rx buffer - if we have space. */
           if (s_tcp_rx_tail.len == 0) {
@@ -350,7 +374,9 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
       LOG(LL_INFO, ("%p closed", nc));
       report_status(nc, 1 /* force */);
       if (nc == s_conn) {
-        mg_uart_set_rx_enabled(s_ucfg->uart_no, 0);
+        if (s_ucfg->rx_throttle_when_no_net) {
+          mg_uart_set_rx_enabled(s_ucfg->uart_no, false);
+        }
         s_conn = NULL;
       }
       if (nc == s_client_conn) {
@@ -390,7 +416,9 @@ static void tu_set_conn(struct mg_connection *nc, bool ws) {
   s_last_tcp_status_report = mg_time();
   if (s_tcfg->rx_buf_size > 0) nc->recv_mbuf_limit = s_tcfg->rx_buf_size;
   s_conn = nc;
-  mg_uart_set_rx_enabled(s_ucfg->uart_no, 1);
+  if (s_ucfg->rx_throttle_when_no_net) {
+    mg_uart_set_rx_enabled(s_ucfg->uart_no, true);
+  }
 }
 
 static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
@@ -501,11 +529,17 @@ int mg_pwm_set(int pin, int period, int duty) {
 }
 #endif
 
+enum mg_app_init_result tu_processor_init(void) __attribute__((weak));
+enum mg_app_init_result tu_processor_init(void) {
+  return MG_APP_INIT_SUCCESS;
+}
+
 enum mg_app_init_result mg_app_init(void) {
   s_mcfg = &get_cfg()->misc;
   s_last_activity = mg_time();
   LOG(LL_INFO, ("TCPUART init"));
   if (!init_tcp(&get_cfg()->tcp)) return MG_APP_INIT_ERROR;
   if (!init_uart(&get_cfg()->uart)) return MG_APP_INIT_ERROR;
-  return MG_APP_INIT_SUCCESS;
+  tu_uart_processor = tu_process_uart;
+  return tu_processor_init();
 }

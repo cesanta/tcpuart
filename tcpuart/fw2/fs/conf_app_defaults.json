@@ -46,6 +46,7 @@
     "rx_fifo_fc_thresh": 110,
     "rx_fifo_alarm": 20,
     "rx_linger_micros": 20,
+    "rx_throttle_when_no_net": true,
     "tx_buf_size": 2048,
     "tx_fc_ena": false,
     "tx_fifo_empty_thresh": 40,
