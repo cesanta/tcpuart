@@ -273,7 +273,7 @@ static IRAM void tu_dispatcher(struct mg_uart_state *us) {
   struct mg_connection *nc = s_conn;
   cs_rbuf_t *urxb = &us->rx_buf;
   if (urxb->used > 0) {
-    tu_process_uart(us, nc);
+    tu_uart_processor(us, nc);
     if (s_conn != NULL) {
       /* See if we can unthrottle TCP RX */
       if (nc->recv_mbuf_limit == 0 && us->tx_buf.avail > 0) {
