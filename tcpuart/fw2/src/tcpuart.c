@@ -90,26 +90,28 @@ static int init_uart(struct sys_config_uart *ucfg) {
   cfg->baud_rate = ucfg->baud_rate;
   cfg->rx_buf_size = ucfg->rx_buf_size;
   cfg->rx_fc_ena = ucfg->rx_fc_ena;
-  cfg->rx_fifo_full_thresh = ucfg->rx_fifo_full_thresh;
-  cfg->rx_fifo_fc_thresh = ucfg->rx_fifo_fc_thresh;
-  cfg->rx_fifo_alarm = ucfg->rx_fifo_alarm;
   cfg->rx_linger_micros = ucfg->rx_linger_micros;
   cfg->tx_buf_size = ucfg->tx_buf_size;
   cfg->tx_fc_ena = ucfg->tx_fc_ena;
+#if CS_PLATFORM == CS_P_ESP_LWIP
+  cfg->rx_fifo_full_thresh = ucfg->rx_fifo_full_thresh;
+  cfg->rx_fifo_fc_thresh = ucfg->rx_fifo_fc_thresh;
+  cfg->rx_fifo_alarm = ucfg->rx_fifo_alarm;
   cfg->tx_fifo_empty_thresh = ucfg->tx_fifo_empty_thresh;
   cfg->tx_fifo_full_thresh = ucfg->tx_fifo_full_thresh;
   cfg->swap_rxcts_txrts = ucfg->swap_rxcts_txrts;
+#endif
   s_us = mg_uart_init(ucfg->uart_no, cfg, tu_dispatcher, NULL);
   if (s_us == NULL) {
     LOG(LL_ERROR, ("UART init failed"));
     free(cfg);
     return 0;
   }
-  LOG(LL_INFO, ("UART%d configured: %d fc %d/%d", ucfg->uart_no, cfg->baud_rate,
-                cfg->rx_fc_ena, cfg->tx_fc_ena));
-  if (!s_ucfg->rx_throttle_when_no_net) {
+  if (!ucfg->rx_throttle_when_no_net) {
     mg_uart_set_rx_enabled(ucfg->uart_no, true);
   }
+  LOG(LL_INFO, ("UART%d configured: %d fc %d/%d", ucfg->uart_no, cfg->baud_rate,
+                cfg->rx_fc_ena, cfg->tx_fc_ena));
   s_ucfg = ucfg;
   return 1;
 }
