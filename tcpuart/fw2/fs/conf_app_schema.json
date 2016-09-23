@@ -17,6 +17,7 @@
   ["tcp.client.ws", "o", {"title": "WebSocket configuration"}],
   ["tcp.client.ws.enable", "b", {"title": "Enable WebSocket"}],
   ["tcp.client.ws.uri", "s", {"title": "URI to use during handshake"}],
+  ["tcp.client.ws.protocol", "s", {"title": "WS sub-protocol to send"}],
   ["tcp.rexmit", "o", {"title": "Retransmit"}],
   ["tcp.rexmit.initial_timeout_ms", "i", {"title": "Initial timeout (ms)"}],
   ["tcp.rexmit.adaptive", "b", {"title": "Adjust based on RTT"}],

@@ -1,6 +1,7 @@
 APP = tcpuart
 APP_MODULES = src
 APP_FS_PATH = ./fs
+APP_SLFS_PATH = ./slfs
 SYS_CONF_DEFAULTS = $(APP_FS_PATH)/conf_sys_defaults.json
 APP_CONF_DEFAULTS = $(APP_FS_PATH)/conf_app_defaults.json
 APP_CFLAGS = -DCS_LOG_TS_DIFF -DMG_LWIP_SSL_RECV_MBUF_LIMIT=1024 -DESP_DEBUG_UART=1
