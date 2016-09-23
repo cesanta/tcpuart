@@ -471,8 +471,7 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
             mg_expand_mac_address_placeholders(uri);
             LOG(LL_INFO, ("%p Sending WS handshake to %s", nc, uri));
             mg_set_protocol_http_websocket(nc);
-            mg_send_websocket_handshake2(nc, uri, s_tcfg->client.remote_addr,
-                                         s_tcfg->client.ws.protocol, NULL);
+            mg_send_websocket_handshake(nc, uri, NULL);
             free(uri);
           }
         } else {
@@ -488,7 +487,6 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
     }
     case MG_EV_CLOSE: {
       if (nc == s_client_conn) {
-        LOG(LL_INFO, ("%p Closed", nc));
         s_client_conn = NULL;
         s_last_connect_attempt = mg_time();
       }
