@@ -58,6 +58,9 @@
       transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
   }
 
+  .form-control-m {
+      width: 15em;
+  }
   .form-control-w {
       width: 20em;
   }
@@ -283,11 +286,15 @@
         <label class="control-label" >Local Listener Port</label>
         <input id="tcp.listener.port" type="text"
           class="form-control form-control-n" />
+        <input type="checkbox" id="tcp.listener.ws.enable"
+          class="checkbox-primary form-control" /> WebSocket
       </div>
       <div class="form-group">
-        <label class="control-label" >Remote Server Address</label>
+        <label class="control-label" >Remote Server Host:Port</label>
         <input id="tcp.client.remote_addr" type="text"
-          class="form-control form-control-w"/>
+          class="form-control form-control-m"/>
+        <input type="checkbox" id="tcp.client.ws.enable"
+          class="checkbox-primary form-control" /> WebSocket
       </div>
     </div>
   </div>
