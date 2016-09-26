@@ -17,3 +17,11 @@ ifneq ($(OS),Windows_NT)
 else
 	@/usr/bin/true
 endif
+
+UPLOAD_PATH=/web/miot/httpdocs/downloads/tcpuart/
+upload:
+	for P in cc3200 esp8266; do \
+		$(MAKE) -C fw2 clean all PLATFORM=$$P ; \
+		gcloud compute copy-files \
+			fw2/firmware/tcpuart-$$P-last.zip miot-com:$(UPLOAD_PATH) ; \
+	done
