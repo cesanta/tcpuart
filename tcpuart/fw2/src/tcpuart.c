@@ -58,7 +58,7 @@ static IRAM void tu_dispatcher(struct mg_uart_state *us);
 
 tu_uart_processor_fn tu_uart_processor;
 
-static int init_tcp(struct sys_config_tcp *cfg) {
+static bool init_tcp(struct sys_config_tcp *cfg) {
   char listener_spec[100];
   struct mg_bind_opts bopts;
   memset(&bopts, 0, sizeof(bopts));
@@ -82,10 +82,14 @@ static int init_tcp(struct sys_config_tcp *cfg) {
   }
   mg_set_c_timer(200 /* ms */, true /* repeat */, tu_conn_mgr_timer_cb, NULL);
   s_tcfg = cfg;
-  return 1;
+  return true;
 }
 
-static int init_uart(struct sys_config_uart *ucfg) {
+static bool init_uart(struct sys_config_uart *ucfg) {
+  if (ucfg->uart_no) {
+    LOG(LL_INFO, ("UART is disabled"));
+    return true;
+  }
   struct mg_uart_config *cfg = mg_uart_default_config();
   cfg->baud_rate = ucfg->baud_rate;
   cfg->rx_buf_size = ucfg->rx_buf_size;
@@ -105,7 +109,7 @@ static int init_uart(struct sys_config_uart *ucfg) {
   if (s_us == NULL) {
     LOG(LL_ERROR, ("UART init failed"));
     free(cfg);
-    return 0;
+    return false;
   }
   if (!ucfg->rx_throttle_when_no_net) {
     mg_uart_set_rx_enabled(ucfg->uart_no, true);
@@ -113,17 +117,23 @@ static int init_uart(struct sys_config_uart *ucfg) {
   LOG(LL_INFO, ("UART%d configured: %d fc %d/%d", ucfg->uart_no, cfg->baud_rate,
                 cfg->rx_fc_ena, cfg->tx_fc_ena));
   s_ucfg = ucfg;
-  return 1;
+  return true;
 }
 
 size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct mg_uart_state *us) {
   size_t len = 0;
-  cs_rbuf_t *utxb = &us->tx_buf;
-  len = MIN(mb->len, utxb->avail);
-  if (len > 0) {
-    cs_rbuf_append(utxb, mb->buf, len);
+  if (us != NULL) {
+    cs_rbuf_t *utxb = &us->tx_buf;
+    len = MIN(mb->len, utxb->avail);
+    if (len > 0) {
+      cs_rbuf_append(utxb, mb->buf, len);
+      mbuf_remove(mb, len);
+      mg_uart_schedule_dispatcher(us->uart_no);
+    }
+  } else {
+    /* Dispatch to /dev/null */
+    len = mb->len;
     mbuf_remove(mb, len);
-    mg_uart_schedule_dispatcher(s_ucfg->uart_no);
   }
   return len;
 }
@@ -309,14 +319,14 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
       break;
     }
     case MG_EV_SEND: {
-      mg_uart_schedule_dispatcher(s_ucfg->uart_no);
+      if (s_us != NULL) mg_uart_schedule_dispatcher(s_us->uart_no);
       break;
     }
     case MG_EV_CLOSE: {
       LOG(LL_INFO, ("%p closed", nc));
       report_status(nc, 1 /* force */);
       if (nc == s_conn) {
-        if (s_ucfg->rx_throttle_when_no_net) {
+        if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
           mg_uart_set_rx_enabled(s_ucfg->uart_no, false);
         }
         if (nc->recv_mbuf.len > 0) {
@@ -352,12 +362,19 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
       struct websocket_message *wm = (struct websocket_message *) ev_data;
       size_t len = 0;
       LOG(LL_DEBUG, ("ws frame %d", (int) wm->size));
-      cs_rbuf_t *utxb = &s_us->tx_buf;
-      len = MIN(wm->size, utxb->avail);
+      if (s_us != NULL) {
+        cs_rbuf_t *utxb = &s_us->tx_buf;
+        len = MIN(wm->size, utxb->avail);
+        if (len > 0) {
+          cs_rbuf_append(utxb, wm->data, len);
+          s_last_activity = mg_time();
+        }
+      } else {
+        /* UART is disabled, throw away the frame. */
+        len = wm->size;
+      }
       if (len > 0) {
-        cs_rbuf_append(utxb, wm->data, len);
         LOG(LL_DEBUG, ("UART <- %d <- WS", (int) len));
-        s_last_activity = mg_time();
       }
       if (len < wm->size) {
         /* UART buffer is full. Save the rest of the frame and throttle RX. */
@@ -369,14 +386,14 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
       break;
     }
     case MG_EV_SEND: {
-      mg_uart_schedule_dispatcher(s_ucfg->uart_no);
+      if (s_us != NULL) mg_uart_schedule_dispatcher(s_us->uart_no);
       break;
     }
     case MG_EV_CLOSE: {
       LOG(LL_INFO, ("%p closed", nc));
       report_status(nc, 1 /* force */);
       if (nc == s_conn) {
-        if (s_ucfg->rx_throttle_when_no_net) {
+        if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
           mg_uart_set_rx_enabled(s_ucfg->uart_no, false);
         }
         s_conn = NULL;
@@ -418,7 +435,7 @@ static void tu_set_conn(struct mg_connection *nc, bool ws) {
   s_last_tcp_status_report = mg_time();
   if (s_tcfg->rx_buf_size > 0) nc->recv_mbuf_limit = s_tcfg->rx_buf_size;
   s_conn = nc;
-  if (s_ucfg->rx_throttle_when_no_net) {
+  if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
     mg_uart_set_rx_enabled(s_ucfg->uart_no, true);
   }
 }

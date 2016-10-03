@@ -39,7 +39,7 @@
     "evict_old": true
   },
   "uart": {
-    "uart_no": 0,
+    "uart_no": -1,
     "baud_rate": 115200,
     "rx_buf_size": 1460,
     "rx_fc_ena": false,

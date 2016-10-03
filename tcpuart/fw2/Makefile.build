@@ -4,9 +4,12 @@ APP_FS_PATH = ./fs
 APP_SLFS_PATH = ./slfs
 SYS_CONF_DEFAULTS = $(APP_FS_PATH)/conf_sys_defaults.json
 APP_CONF_DEFAULTS = $(APP_FS_PATH)/conf_app_defaults.json
-APP_CFLAGS = -DCS_LOG_TS_DIFF -DMG_LWIP_SSL_RECV_MBUF_LIMIT=1024 -DESP_DEBUG_UART=1
-SSL = Krypton
+APP_CFLAGS = -DCS_LOG_TS_DIFF -DMG_LWIP_SSL_RECV_MBUF_LIMIT=1024
 SJ_ENABLE_JS = 0
 SJ_ENABLE_CLUBBY = 1
+ifeq ("$(PLATFORM)","esp8266")
+  MG_DEBUG_UART = 1
+  SSL = Krypton
+endif
 
 include $(REPO_PATH)/fw/platforms/$(PLATFORM)/Makefile.build
