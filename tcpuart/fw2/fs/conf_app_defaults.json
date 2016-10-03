@@ -11,15 +11,15 @@
       }
     },
     "client": {
-      "remote_addr": "",
+      "remote_addr": "mongoose-iot.com:443",
       "tls": {
         "cert": "",
-        "ca_cert": "",
-        "server_name": ""
+        "ca_cert": "StartCom.crt.pem",
+        "server_name": "mongoose-iot.com"
       },
       "ws": {
-        "enable": false,
-        "uri": "/tcpuart/????????????",
+        "enable": true,
+        "uri": "/uart-to-websocket/device/????????????",
         "protocol": ""
       },
       "reconnect_interval": 5
