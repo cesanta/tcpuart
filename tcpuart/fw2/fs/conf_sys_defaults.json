@@ -64,7 +64,7 @@
   "dns_sd": {
     "enable": true,
     "service_name": "tcpuart-??????",
-    "service_type": "_tcpuart"
+    "service_type": "_tcpuart._tcp"
   },
   "debug": {
     "level": 2,
