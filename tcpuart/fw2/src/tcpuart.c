@@ -86,7 +86,7 @@ static bool init_tcp(struct sys_config_tcp *cfg) {
 }
 
 static bool init_uart(struct sys_config_uart *ucfg) {
-  if (ucfg->uart_no) {
+  if (ucfg->uart_no < 0) {
     LOG(LL_INFO, ("UART is disabled"));
     return true;
   }
