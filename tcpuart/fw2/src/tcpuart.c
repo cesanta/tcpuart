@@ -428,7 +428,7 @@ static void tu_set_conn(struct mg_connection *nc, bool ws) {
 #elif CS_PLATFORM == CS_P_CC3200
   /* On CC3200 keep-alive is enabled by default and can only be disabled. */
   SlSockKeepalive_t opt;
-  opt.KeepaliveEnabled = (s_tcfg->keepalive.idle > 0);
+  opt.KeepaliveEnabled = s_tcfg->keepalive.enable;
   sl_SetSockOpt(nc->sock, SL_SOL_SOCKET, SL_SO_KEEPALIVE, (_u8 *) &opt,
                 sizeof(opt));
 #endif

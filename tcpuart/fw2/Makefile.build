@@ -3,7 +3,7 @@ PLATFORM ?= esp8266
 APP_MODULES = src
 APP_FS_PATH = ./fs
 APP_SLFS_PATH = ./slfs
-APP_CONF_SCHEMA = src/conf_schema.yaml
+APP_CONF_SCHEMA = src/conf_schema.yaml src/conf_schema_$(PLATFORM).yaml
 APP_CFLAGS = -DCS_LOG_TS_DIFF -DMG_LWIP_SSL_RECV_MBUF_LIMIT=1024
 BUILD_DIR = .build-$(PLATFORM)
 SJ_ENABLE_JS = 0
