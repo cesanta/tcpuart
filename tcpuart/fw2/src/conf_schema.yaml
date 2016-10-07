@@ -4,8 +4,6 @@
   ["wifi.ap.ssid", "TCPUART_??????"],
   ["wifi.ap.pass", ""],
   ["clubby.server_address", ""],
-  ["dns_sd.service_name", "tcpuart-??????"],
-  ["dns_sd.service_type", "_tcpuart._tcp"],
   ["debug.stdout_uart", 1],
   ["debug.stderr_uart", 1],
   ["console.log_file", ""],

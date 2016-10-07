@@ -1,4 +1,7 @@
 [
+  ["dns_sd.service_name", "tcpuart-??????"],
+  ["dns_sd.service_type", "_tcpuart._tcp"],
+
   # On ESP we perform our own TCP retransmit to improve latency.
   ["tcp.rexmit", "o", {"title": "Retransmit"}],
   ["tcp.rexmit.initial_timeout_ms", "i", 200, {"title": "Initial timeout (ms)"}],
