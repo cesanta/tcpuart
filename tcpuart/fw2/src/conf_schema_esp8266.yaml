@@ -2,12 +2,7 @@
   ["dns_sd.service_name", "tcpuart-??????"],
   ["dns_sd.service_type", "_tcpuart._tcp"],
 
-  # On ESP we perform our own TCP retransmit to improve latency.
-  ["tcp.rexmit", "o", {"title": "Retransmit"}],
-  ["tcp.rexmit.initial_timeout_ms", "i", 200, {"title": "Initial timeout (ms)"}],
-  ["tcp.rexmit.adaptive", "b", true, {"title": "Adjust based on RTT"}],
-
-  # ESP (LWIP) supports fine-grained control over retransmit.
+  # ESP (LWIP) supports fine-grained control over keepalive.
   ["tcp.keepalive.idle", "i", 60, {"title": "Begin after idle (sec)"}],
   ["tcp.keepalive.count", "i", 10, {"title": "Send this many probes"}],
   ["tcp.keepalive.interval", "i", 6, {"title": "Send at this interval (sec)"}],

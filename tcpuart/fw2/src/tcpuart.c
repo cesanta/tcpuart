@@ -19,7 +19,6 @@
 
 #if CS_PLATFORM == CS_P_ESP_LWIP
 #include "user_interface.h"
-#include "common/platforms/esp8266/esp_mg_net_if.h"
 #include "fw/platforms/esp8266/user/esp_uart.h"
 #elif CS_PLATFORM == CS_P_CC3200
 #include "hw_types.h"
