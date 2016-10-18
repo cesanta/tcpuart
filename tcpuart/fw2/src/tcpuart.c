@@ -17,7 +17,7 @@
 #include "fw/src/mg_sys_config.h"
 #include "fw/src/mg_uart.h"
 
-#if CS_PLATFORM == CS_P_ESP_LWIP
+#if CS_PLATFORM == CS_P_ESP8266
 #include "user_interface.h"
 #include "fw/platforms/esp8266/user/esp_uart.h"
 #elif CS_PLATFORM == CS_P_CC3200
@@ -96,7 +96,7 @@ static bool init_uart(struct sys_config_uart *ucfg) {
   cfg->rx_linger_micros = ucfg->rx_linger_micros;
   cfg->tx_buf_size = ucfg->tx_buf_size;
   cfg->tx_fc_ena = ucfg->tx_fc_ena;
-#if CS_PLATFORM == CS_P_ESP_LWIP
+#if CS_PLATFORM == CS_P_ESP8266
   cfg->rx_fifo_full_thresh = ucfg->rx_fifo_full_thresh;
   cfg->rx_fifo_fc_thresh = ucfg->rx_fifo_fc_thresh;
   cfg->rx_fifo_alarm = ucfg->rx_fifo_alarm;
@@ -169,7 +169,7 @@ void check_beeper(void) {
 }
 
 static int uart_cts(int uart_no) {
-#if CS_PLATFORM == CS_P_ESP_LWIP
+#if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_cts(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   return cc3200_uart_cts(uart_no);
@@ -177,7 +177,7 @@ static int uart_cts(int uart_no) {
 }
 
 static uint32_t uart_raw_ints(int uart_no) {
-#if CS_PLATFORM == CS_P_ESP_LWIP
+#if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_raw_ints(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   return cc3200_uart_raw_ints(uart_no);
@@ -185,7 +185,7 @@ static uint32_t uart_raw_ints(int uart_no) {
 }
 
 static uint32_t uart_int_mask(int uart_no) {
-#if CS_PLATFORM == CS_P_ESP_LWIP
+#if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_int_mask(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   return cc3200_uart_int_mask(uart_no);
@@ -193,7 +193,7 @@ static uint32_t uart_int_mask(int uart_no) {
 }
 
 int uart_rx_fifo_len(int uart_no) {
-#if CS_PLATFORM == CS_P_ESP_LWIP
+#if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_rx_fifo_len(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   /* It's not possible to get exact FIFO length on CC3200. */
@@ -202,7 +202,7 @@ int uart_rx_fifo_len(int uart_no) {
 }
 
 int uart_tx_fifo_len(int uart_no) {
-#if CS_PLATFORM == CS_P_ESP_LWIP
+#if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_tx_fifo_len(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   /* It's not possible to get exact FIFO length on CC3200. */
@@ -420,7 +420,7 @@ static void tu_set_conn(struct mg_connection *nc, bool ws) {
     }
   }
   nc->handler = (ws ? tu_ws_conn_handler : tu_tcp_conn_handler);
-#if CS_PLATFORM == CS_P_ESP_LWIP
+#if CS_PLATFORM == CS_P_ESP8266
   mg_lwip_set_keepalive_params(nc, s_tcfg->keepalive.idle,
                                s_tcfg->keepalive.interval,
                                s_tcfg->keepalive.count);
