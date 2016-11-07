@@ -13,4 +13,4 @@ ifeq ("$(PLATFORM)","esp8266")
   SSL = Krypton
 endif
 
-include $(REPO_PATH)/fw/platforms/$(PLATFORM)/Makefile.build
+include $(MIOT_PATH)/fw/platforms/$(PLATFORM)/Makefile.build
