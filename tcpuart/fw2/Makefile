@@ -4,6 +4,7 @@ MIOT_PATH = ../../mongoose-iot
 else
 MIOT_PATH = ../../..
 endif
+MAKEFILE_BUILD = Makefile.build
 
 PLATFORM ?= esp8266
 
