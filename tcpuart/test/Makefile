@@ -9,7 +9,7 @@ SPEED?=3000000
 all: echo_test serial_echo serial_reader
 
 echo_test: echo_test.c mongoose.c mongoose.h Makefile
-	$(CC) -std=c99 -o $@ -I. -DMG_ENABLE_SSL -DCS_LOG_TS_DIFF \
+	$(CC) -std=c99 -o $@ -I. -DMG_ENABLE_SSL -DCS_LOG_ENABLE_TS_DIFF \
 	  echo_test.c mongoose.c -lcrypto -lssl
 
 dumb_uart_echo:
