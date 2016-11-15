@@ -9,7 +9,7 @@ BUILD_DIR = .build-$(PLATFORM)
 SJ_ENABLE_JS = 0
 SJ_ENABLE_CLUBBY = 1
 ifeq ("$(PLATFORM)","esp8266")
-  MG_DEBUG_UART = 1
+  MIOT_DEBUG_UART = 1
   SSL = Krypton
 endif
 
