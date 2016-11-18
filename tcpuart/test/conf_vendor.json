@@ -5,7 +5,7 @@
       "pass": "Cesanta2015"
     }
   },
-  "clubby": {
+  "rpc": {
     "connect_on_boot": false,
     "device_auto_registration": false
   },

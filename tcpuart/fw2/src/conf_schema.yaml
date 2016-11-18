@@ -3,7 +3,7 @@
   ["wifi.ap.keep_enabled", false],
   ["wifi.ap.ssid", "TCPUART_??????"],
   ["wifi.ap.pass", ""],
-  ["clubby.server_address", ""],
+  ["rpc.server_address", ""],
   ["debug.stdout_uart", 1],
   ["debug.stderr_uart", 1],
   ["console.log_file", ""],
