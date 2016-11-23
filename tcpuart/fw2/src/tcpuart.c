@@ -79,7 +79,7 @@ static bool init_tcp(struct sys_config_tcp *cfg) {
       mg_set_protocol_http_websocket(s_listener_conn);
     }
   }
-  miot_set_c_timer(200 /* ms */, true /* repeat */, tu_conn_mgr_timer_cb, NULL);
+  miot_set_timer(200 /* ms */, true /* repeat */, tu_conn_mgr_timer_cb, NULL);
   s_tcfg = cfg;
   return true;
 }
