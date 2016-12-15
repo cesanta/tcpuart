@@ -1,6 +1,5 @@
 [
   # First some sys overrides.
-  ["wifi.ap.keep_enabled", false],
   ["wifi.ap.ssid", "TCPUART_??????"],
   ["wifi.ap.pass", ""],
   ["rpc.server_address", ""],
