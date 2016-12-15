@@ -10,7 +10,6 @@ SJ_ENABLE_JS = 0
 SJ_ENABLE_CLUBBY = 1
 ifeq ("$(PLATFORM)","esp8266")
   MIOT_DEBUG_UART = 1
-  SSL = Krypton
 endif
 
 include $(MIOT_PATH)/fw/platforms/$(PLATFORM)/Makefile.build
