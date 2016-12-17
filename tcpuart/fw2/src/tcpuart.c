@@ -96,12 +96,11 @@ static bool init_uart(struct sys_config_uart *ucfg) {
   cfg->rx_linger_micros = ucfg->rx_linger_micros;
   cfg->tx_buf_size = ucfg->tx_buf_size;
   cfg->tx_fc_ena = ucfg->tx_fc_ena;
-#if CS_PLATFORM == CS_P_ESP8266
+#if CS_PLATFORM == CS_P_ESP32 || CS_PLATFORM == CS_P_ESP8266
   cfg->rx_fifo_full_thresh = ucfg->rx_fifo_full_thresh;
   cfg->rx_fifo_fc_thresh = ucfg->rx_fifo_fc_thresh;
   cfg->rx_fifo_alarm = ucfg->rx_fifo_alarm;
   cfg->tx_fifo_empty_thresh = ucfg->tx_fifo_empty_thresh;
-  cfg->tx_fifo_full_thresh = ucfg->tx_fifo_full_thresh;
   cfg->swap_rxcts_txrts = ucfg->swap_rxcts_txrts;
 #endif
   s_us = miot_uart_init(ucfg->uart_no, cfg, tu_dispatcher, NULL);

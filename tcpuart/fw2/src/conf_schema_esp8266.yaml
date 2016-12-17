@@ -13,7 +13,6 @@
   ["uart.rx_fifo_fc_thresh", "i", 110, {"hide": true}],
   ["uart.rx_fifo_alarm", "i", 20, {"hide": true}],
   ["uart.tx_fifo_empty_thresh", "i", 40, {"hide": true}],
-  ["uart.tx_fifo_full_thresh", "i", 120, {"hide": true}],
 
   # On ESP one can configure pin mux to swap FC and data pins.
   ["uart.swap_rxcts_txrts", "b", {"title": "Swap RX<->CTS, TX<->RTS"}],
