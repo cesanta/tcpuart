@@ -5,8 +5,6 @@
   ["rpc.server_address", ""],
   ["debug.stdout_uart", 1],
   ["debug.stderr_uart", 1],
-  ["console.log_file", ""],
-  ["console.send_to_cloud", false],
 
   ["tcp", "o", {"title": "TCP settings"}],
   ["tcp.listener", "o", {"title": "Listener"}],

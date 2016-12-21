@@ -1,7 +1,9 @@
 [
-  ["wifi.ap.keep_enabled", false],
+  ["console.log_file", ""],
+  ["console.send_to_cloud", false],
   ["dns_sd.service_name", "tcpuart-??????"],
   ["dns_sd.service_type", "_tcpuart._tcp"],
+  ["wifi.ap.keep_enabled", false],
 
   # ESP (LWIP) supports fine-grained control over keepalive.
   ["tcp.keepalive.idle", "i", 60, {"title": "Begin after idle (sec)"}],

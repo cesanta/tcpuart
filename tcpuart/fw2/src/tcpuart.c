@@ -20,6 +20,8 @@
 #if CS_PLATFORM == CS_P_ESP8266
 #include "user_interface.h"
 #include "fw/platforms/esp8266/user/esp_uart.h"
+#elif CS_PLATFORM == CS_P_ESP32
+#include "fw/platforms/esp32/src/esp32_uart.h"
 #elif CS_PLATFORM == CS_P_CC3200
 #include "hw_types.h"
 #include "driverlib/uart.h"
@@ -101,6 +103,8 @@ static bool init_uart(struct sys_config_uart *ucfg) {
   cfg->rx_fifo_fc_thresh = ucfg->rx_fifo_fc_thresh;
   cfg->rx_fifo_alarm = ucfg->rx_fifo_alarm;
   cfg->tx_fifo_empty_thresh = ucfg->tx_fifo_empty_thresh;
+#endif
+#if CS_PLATFORM == CS_P_ESP8266
   cfg->swap_rxcts_txrts = ucfg->swap_rxcts_txrts;
 #endif
   s_us = miot_uart_init(ucfg->uart_no, cfg, tu_dispatcher, NULL);
@@ -170,6 +174,8 @@ void check_beeper(void) {
 static int uart_cts(int uart_no) {
 #if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_cts(uart_no);
+#elif CS_PLATFORM == CS_P_ESP32
+  return esp32_uart_cts(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   return cc3200_uart_cts(uart_no);
 #endif
@@ -178,6 +184,8 @@ static int uart_cts(int uart_no) {
 static uint32_t uart_raw_ints(int uart_no) {
 #if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_raw_ints(uart_no);
+#elif CS_PLATFORM == CS_P_ESP32
+  return esp32_uart_raw_ints(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   return cc3200_uart_raw_ints(uart_no);
 #endif
@@ -186,6 +194,8 @@ static uint32_t uart_raw_ints(int uart_no) {
 static uint32_t uart_int_mask(int uart_no) {
 #if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_int_mask(uart_no);
+#elif CS_PLATFORM == CS_P_ESP32
+  return esp32_uart_int_mask(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   return cc3200_uart_int_mask(uart_no);
 #endif
@@ -194,6 +204,8 @@ static uint32_t uart_int_mask(int uart_no) {
 int uart_rx_fifo_len(int uart_no) {
 #if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_rx_fifo_len(uart_no);
+#elif CS_PLATFORM == CS_P_ESP32
+  return esp32_uart_rx_fifo_len(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   /* It's not possible to get exact FIFO length on CC3200. */
   return UARTCharsAvail(cc3200_uart_get_base(uart_no));
@@ -203,6 +215,8 @@ int uart_rx_fifo_len(int uart_no) {
 int uart_tx_fifo_len(int uart_no) {
 #if CS_PLATFORM == CS_P_ESP8266
   return esp_uart_tx_fifo_len(uart_no);
+#elif CS_PLATFORM == CS_P_ESP32
+  return esp32_uart_tx_fifo_len(uart_no);
 #elif CS_PLATFORM == CS_P_CC3200
   /* It's not possible to get exact FIFO length on CC3200. */
   return (UARTSpaceAvail(cc3200_uart_get_base(uart_no)) == 0);
@@ -541,7 +555,7 @@ static void tu_conn_mgr_timer_cb(void *arg) {
   (void) arg;
 }
 
-#if CS_PLATFORM == CS_P_CC3200
+#if CS_PLATFORM != CS_P_ESP8266
 int miot_pwm_set(int pin, int period, int duty) {
   /* TODO(rojer) */
   return 0;
