@@ -2,7 +2,6 @@
   # First some sys overrides.
   ["wifi.ap.ssid", "TCPUART_??????"],
   ["wifi.ap.pass", ""],
-  ["rpc.server_address", ""],
   ["debug.stdout_uart", 1],
   ["debug.stderr_uart", 1],
 
