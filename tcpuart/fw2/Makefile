@@ -1,6 +1,6 @@
 APP = tcpuart
-ifneq ($(wildcard ../../mongoose-iot),)
-MGOS_PATH = ../../mongoose-iot
+ifneq ($(wildcard ../../mongoose-os),)
+MGOS_PATH = ../../mongoose-os
 else
 MGOS_PATH = ../../..
 endif
