@@ -8,18 +8,18 @@
 
 #include "mongoose/mongoose.h"
 
-#include "fw/src/miot_app.h"
-#include "fw/src/miot_uart.h"
+#include "fw/src/mgos_app.h"
+#include "fw/src/mgos_uart.h"
 
 /*
  * A hook to pre-process data in the UART buffer.
  * An app based on TCPUART can perform local processing of some data this way.
  * Default implementation does nothing and just forwards everything.
  */
-typedef void (*tu_uart_processor_fn)(struct miot_uart_state *us,
+typedef void (*tu_uart_processor_fn)(struct mgos_uart_state *us,
                                      struct mg_connection *nc);
 extern tu_uart_processor_fn tu_uart_processor;
 
-enum miot_app_init_result tu_processor_init(void);
+enum mgos_app_init_result tu_processor_init(void);
 
 #endif /* CS_PROJECTS_TCPUART_FW2_SRC_TCPUART_H_ */

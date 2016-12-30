@@ -9,13 +9,13 @@
 
 #include "common/cs_dbg.h"
 
-#include "fw/src/miot_app.h"
-#include "fw/src/miot_hal.h"
-#include "fw/src/miot_mongoose.h"
-#include "fw/src/miot_pwm.h"
-#include "fw/src/miot_timers.h"
-#include "fw/src/miot_sys_config.h"
-#include "fw/src/miot_uart.h"
+#include "fw/src/mgos_app.h"
+#include "fw/src/mgos_hal.h"
+#include "fw/src/mgos_mongoose.h"
+#include "fw/src/mgos_pwm.h"
+#include "fw/src/mgos_timers.h"
+#include "fw/src/mgos_sys_config.h"
+#include "fw/src/mgos_uart.h"
 
 #if CS_PLATFORM == CS_P_ESP8266
 #include "user_interface.h"
@@ -39,7 +39,7 @@ static struct sys_config_tcp *s_tcfg = NULL;
 static struct sys_config_uart *s_ucfg = NULL;
 static struct sys_config_misc *s_mcfg = NULL;
 
-static struct miot_uart_state *s_us = NULL;
+static struct mgos_uart_state *s_us = NULL;
 static struct mg_connection *s_conn = NULL;
 static struct mg_connection *s_client_conn = NULL;
 static struct mg_connection *s_listener_conn = NULL;
@@ -48,14 +48,14 @@ static struct mbuf s_tcp_rx_tail;
 static double s_last_activity = 0;
 static double s_last_tcp_status_report = 0;
 static double s_last_uart_status_report = 0;
-static struct miot_uart_stats s_prev_stats;
+static struct mgos_uart_stats s_prev_stats;
 
 static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data);
 static void tu_conn_mgr_timer_cb(void *arg);
 static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
                                 void *ev_data);
 static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data);
-static IRAM void tu_dispatcher(struct miot_uart_state *us);
+static IRAM void tu_dispatcher(struct mgos_uart_state *us);
 
 tu_uart_processor_fn tu_uart_processor;
 
@@ -72,7 +72,7 @@ static bool init_tcp(struct sys_config_tcp *cfg) {
                   (cfg->listener.ws.enable ? "WS" : ""),
                   (bopts.ssl_cert ? bopts.ssl_cert : "no SSL")));
     s_listener_conn =
-        mg_bind_opt(miot_get_mgr(), listener_spec, tu_conn_mgr, bopts);
+        mg_bind_opt(mgos_get_mgr(), listener_spec, tu_conn_mgr, bopts);
     if (s_listener_conn == NULL) {
       LOG(LL_ERROR, ("Failed to create listener"));
       return 0;
@@ -81,7 +81,7 @@ static bool init_tcp(struct sys_config_tcp *cfg) {
       mg_set_protocol_http_websocket(s_listener_conn);
     }
   }
-  miot_set_timer(200 /* ms */, true /* repeat */, tu_conn_mgr_timer_cb, NULL);
+  mgos_set_timer(200 /* ms */, true /* repeat */, tu_conn_mgr_timer_cb, NULL);
   s_tcfg = cfg;
   return true;
 }
@@ -91,7 +91,7 @@ static bool init_uart(struct sys_config_uart *ucfg) {
     LOG(LL_INFO, ("UART is disabled"));
     return true;
   }
-  struct miot_uart_config *cfg = miot_uart_default_config();
+  struct mgos_uart_config *cfg = mgos_uart_default_config();
   cfg->baud_rate = ucfg->baud_rate;
   cfg->rx_buf_size = ucfg->rx_buf_size;
   cfg->rx_fc_ena = ucfg->rx_fc_ena;
@@ -107,14 +107,14 @@ static bool init_uart(struct sys_config_uart *ucfg) {
 #if CS_PLATFORM == CS_P_ESP8266
   cfg->swap_rxcts_txrts = ucfg->swap_rxcts_txrts;
 #endif
-  s_us = miot_uart_init(ucfg->uart_no, cfg, tu_dispatcher, NULL);
+  s_us = mgos_uart_init(ucfg->uart_no, cfg, tu_dispatcher, NULL);
   if (s_us == NULL) {
     LOG(LL_ERROR, ("UART init failed"));
     free(cfg);
     return false;
   }
   if (!ucfg->rx_throttle_when_no_net) {
-    miot_uart_set_rx_enabled(ucfg->uart_no, true);
+    mgos_uart_set_rx_enabled(ucfg->uart_no, true);
   }
   LOG(LL_INFO, ("UART%d configured: %d fc %d/%d", ucfg->uart_no, cfg->baud_rate,
                 cfg->rx_fc_ena, cfg->tx_fc_ena));
@@ -122,7 +122,7 @@ static bool init_uart(struct sys_config_uart *ucfg) {
   return true;
 }
 
-size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct miot_uart_state *us) {
+size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct mgos_uart_state *us) {
   size_t len = 0;
   if (us != NULL) {
     cs_rbuf_t *utxb = &us->tx_buf;
@@ -130,7 +130,7 @@ size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct miot_uart_state *us) {
     if (len > 0) {
       cs_rbuf_append(utxb, mb->buf, len);
       mbuf_remove(mb, len);
-      miot_uart_schedule_dispatcher(us->uart_no);
+      mgos_uart_schedule_dispatcher(us->uart_no);
     }
   } else {
     /* Dispatch to /dev/null */
@@ -147,7 +147,7 @@ void check_beeper(void) {
     if (s_mcfg->beeper.timeout_seconds == 0 ||
         s_mcfg->beeper.gpio_no != beeping_on_gpio ||
         (mg_time() - last_change > 0.9)) {
-      miot_pwm_set(beeping_on_gpio, 0, 0);
+      mgos_pwm_set(beeping_on_gpio, 0, 0);
       beeping_on_gpio = -1;
       last_change = mg_time();
       return;
@@ -164,7 +164,7 @@ void check_beeper(void) {
   if ((now - s_last_activity > s_mcfg->beeper.timeout_seconds) &&
       (now - last_change > 0.9)) {
     beeping_on_gpio = s_mcfg->beeper.gpio_no;
-    miot_pwm_set(beeping_on_gpio, 250, 125); /* BEEEP! (4 KHz) */
+    mgos_pwm_set(beeping_on_gpio, 250, 125); /* BEEEP! (4 KHz) */
     last_change = now;
     LOG(LL_WARN,
         ("No activity for %d seconds - BEEP!", (int) (now - s_last_activity)));
@@ -239,9 +239,9 @@ static void report_status(struct mg_connection *nc, int force) {
       (force ||
        (now - s_last_uart_status_report) * 1000 >=
            s_ucfg->status_interval_ms)) {
-    struct miot_uart_state *us = s_us;
-    struct miot_uart_stats *s = &us->stats;
-    struct miot_uart_stats *ps = &s_prev_stats;
+    struct mgos_uart_state *us = s_us;
+    struct mgos_uart_stats *s = &us->stats;
+    struct mgos_uart_stats *ps = &s_prev_stats;
     int uart_no = us->uart_no;
     fprintf(stderr,
             "UART%d ints %u/%u/%u; rx en %d bytes %u buf %u fifo %u, ovf %u, "
@@ -254,14 +254,14 @@ static void report_status(struct mg_connection *nc, int force) {
             s->rx_linger_conts - ps->rx_linger_conts,
             s->tx_bytes - ps->tx_bytes, us->tx_buf.used,
             uart_tx_fifo_len(uart_no), s->tx_throttles - ps->tx_throttles,
-            miot_get_free_heap_size(), uart_raw_ints(uart_no),
+            mgos_get_free_heap_size(), uart_raw_ints(uart_no),
             uart_int_mask(uart_no), uart_cts(uart_no));
     memcpy(ps, s, sizeof(*s));
     s_last_uart_status_report = now;
   }
 }
 
-static void tu_process_uart(struct miot_uart_state *us,
+static void tu_process_uart(struct mgos_uart_state *us,
                             struct mg_connection *nc) {
   int num_sent = 0;
   if (nc == NULL) return;
@@ -286,7 +286,7 @@ static void tu_process_uart(struct miot_uart_state *us,
   }
 }
 
-static IRAM void tu_dispatcher(struct miot_uart_state *us) {
+static IRAM void tu_dispatcher(struct mgos_uart_state *us) {
   /* TCP -> UART */
   /* Drain buffer left from a previous connection, if any. */
   if (s_tcp_rx_tail.len > 0) {
@@ -315,7 +315,7 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
                                 void *ev_data) {
   (void) ev_data;
 
-  miot_wdt_feed();
+  mgos_wdt_feed();
 
   switch (ev) {
     case MG_EV_POLL:
@@ -331,7 +331,7 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
       break;
     }
     case MG_EV_SEND: {
-      if (s_us != NULL) miot_uart_schedule_dispatcher(s_us->uart_no);
+      if (s_us != NULL) mgos_uart_schedule_dispatcher(s_us->uart_no);
       break;
     }
     case MG_EV_CLOSE: {
@@ -339,7 +339,7 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
       report_status(nc, 1 /* force */);
       if (nc == s_conn) {
         if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
-          miot_uart_set_rx_enabled(s_ucfg->uart_no, false);
+          mgos_uart_set_rx_enabled(s_ucfg->uart_no, false);
         }
         if (nc->recv_mbuf.len > 0) {
           /* Rescue the bytes remaining in the rx buffer - if we have space. */
@@ -367,7 +367,7 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
 
 static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
                                void *ev_data) {
-  miot_wdt_feed();
+  mgos_wdt_feed();
 
   switch (ev) {
     case MG_EV_WEBSOCKET_FRAME: {
@@ -398,7 +398,7 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
       break;
     }
     case MG_EV_SEND: {
-      if (s_us != NULL) miot_uart_schedule_dispatcher(s_us->uart_no);
+      if (s_us != NULL) mgos_uart_schedule_dispatcher(s_us->uart_no);
       break;
     }
     case MG_EV_CLOSE: {
@@ -406,7 +406,7 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
       report_status(nc, 1 /* force */);
       if (nc == s_conn) {
         if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
-          miot_uart_set_rx_enabled(s_ucfg->uart_no, false);
+          mgos_uart_set_rx_enabled(s_ucfg->uart_no, false);
         }
         s_conn = NULL;
       }
@@ -448,7 +448,7 @@ static void tu_set_conn(struct mg_connection *nc, bool ws) {
   if (s_tcfg->rx_buf_size > 0) nc->recv_mbuf_limit = s_tcfg->rx_buf_size;
   s_conn = nc;
   if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
-    miot_uart_set_rx_enabled(s_ucfg->uart_no, true);
+    mgos_uart_set_rx_enabled(s_ucfg->uart_no, true);
   }
 }
 
@@ -497,7 +497,7 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
             tu_set_conn(nc, false /* ws */);
           } else {
             char *uri = strdup(s_tcfg->client.ws.uri);
-            miot_expand_mac_address_placeholders(uri);
+            mgos_expand_mac_address_placeholders(uri);
             LOG(LL_INFO, ("%p Sending WS handshake to %s", nc, uri));
             mg_set_protocol_http_websocket(nc);
             mg_send_websocket_handshake2(nc, uri, s_tcfg->client.remote_addr,
@@ -546,7 +546,7 @@ static void tu_conn_mgr_timer_cb(void *arg) {
          (copts.ssl_ca_cert ? copts.ssl_ca_cert : "-"),
          (copts.ssl_server_name ? copts.ssl_server_name : "-")));
     s_last_connect_attempt = mg_time();
-    s_client_conn = mg_connect_opt(miot_get_mgr(), s_tcfg->client.remote_addr,
+    s_client_conn = mg_connect_opt(mgos_get_mgr(), s_tcfg->client.remote_addr,
                                    tu_conn_mgr, copts);
     if (s_client_conn == NULL) {
       LOG(LL_ERROR, ("Connection error: %s", error));
@@ -556,23 +556,23 @@ static void tu_conn_mgr_timer_cb(void *arg) {
 }
 
 #if CS_PLATFORM != CS_P_ESP8266
-int miot_pwm_set(int pin, int period, int duty) {
+int mgos_pwm_set(int pin, int period, int duty) {
   /* TODO(rojer) */
   return 0;
 }
 #endif
 
-enum miot_app_init_result tu_processor_init(void) __attribute__((weak));
-enum miot_app_init_result tu_processor_init(void) {
-  return MIOT_APP_INIT_SUCCESS;
+enum mgos_app_init_result tu_processor_init(void) __attribute__((weak));
+enum mgos_app_init_result tu_processor_init(void) {
+  return MGOS_APP_INIT_SUCCESS;
 }
 
-enum miot_app_init_result miot_app_init(void) {
+enum mgos_app_init_result mgos_app_init(void) {
   s_mcfg = &get_cfg()->misc;
   s_last_activity = mg_time();
   LOG(LL_INFO, ("TCPUART init"));
-  if (!init_tcp(&get_cfg()->tcp)) return MIOT_APP_INIT_ERROR;
-  if (!init_uart(&get_cfg()->uart)) return MIOT_APP_INIT_ERROR;
+  if (!init_tcp(&get_cfg()->tcp)) return MGOS_APP_INIT_ERROR;
+  if (!init_uart(&get_cfg()->uart)) return MGOS_APP_INIT_ERROR;
   tu_uart_processor = tu_process_uart;
   return tu_processor_init();
 }

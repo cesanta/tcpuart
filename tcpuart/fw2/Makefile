@@ -1,11 +1,11 @@
 APP = tcpuart
 ifneq ($(wildcard ../../mongoose-iot),)
-MIOT_PATH = ../../mongoose-iot
+MGOS_PATH = ../../mongoose-iot
 else
-MIOT_PATH = ../../..
+MGOS_PATH = ../../..
 endif
 MAKEFILE_BUILD = Makefile.build
 
 PLATFORM ?= esp8266
 
-include $(MIOT_PATH)/fw/platforms/$(PLATFORM)/Makefile
+include $(MGOS_PATH)/fw/platforms/$(PLATFORM)/Makefile
