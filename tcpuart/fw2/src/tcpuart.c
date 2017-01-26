@@ -19,7 +19,7 @@
 
 #if CS_PLATFORM == CS_P_ESP8266
 #include "user_interface.h"
-#include "fw/platforms/esp8266/user/esp_uart.h"
+#include "fw/platforms/esp8266/src/esp_uart.h"
 #elif CS_PLATFORM == CS_P_ESP32
 #include "fw/platforms/esp32/src/esp32_uart.h"
 #elif CS_PLATFORM == CS_P_CC3200
