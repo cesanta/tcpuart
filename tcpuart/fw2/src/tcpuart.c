@@ -130,7 +130,7 @@ size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct mgos_uart_state *us) {
     if (len > 0) {
       cs_rbuf_append(utxb, mb->buf, len);
       mbuf_remove(mb, len);
-      mgos_uart_schedule_dispatcher(us->uart_no);
+      mgos_uart_schedule_dispatcher(us->uart_no, false /* from_isr */);
     }
   } else {
     /* Dispatch to /dev/null */
@@ -331,7 +331,8 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
       break;
     }
     case MG_EV_SEND: {
-      if (s_us != NULL) mgos_uart_schedule_dispatcher(s_us->uart_no);
+      if (s_us != NULL)
+        mgos_uart_schedule_dispatcher(s_us->uart_no, false /* from_isr */);
       break;
     }
     case MG_EV_CLOSE: {
@@ -398,7 +399,8 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
       break;
     }
     case MG_EV_SEND: {
-      if (s_us != NULL) mgos_uart_schedule_dispatcher(s_us->uart_no);
+      if (s_us != NULL)
+        mgos_uart_schedule_dispatcher(s_us->uart_no, false /* from_isr */);
       break;
     }
     case MG_EV_CLOSE: {
