@@ -50,11 +50,13 @@ static double s_last_tcp_status_report = 0;
 static double s_last_uart_status_report = 0;
 static struct mgos_uart_stats s_prev_stats;
 
-static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data);
+static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data,
+                        void *user_data);
 static void tu_conn_mgr_timer_cb(void *arg);
-static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
-                                void *ev_data);
-static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data);
+static void tu_tcp_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
+                                void *user_data);
+static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
+                               void *user_data);
 static IRAM void tu_dispatcher(struct mgos_uart_state *us);
 
 tu_uart_processor_fn tu_uart_processor;
@@ -72,7 +74,7 @@ static bool init_tcp(struct sys_config_tcp *cfg) {
                   (cfg->listener.ws.enable ? "WS" : ""),
                   (bopts.ssl_cert ? bopts.ssl_cert : "no SSL")));
     s_listener_conn =
-        mg_bind_opt(mgos_get_mgr(), listener_spec, tu_conn_mgr, bopts);
+        mg_bind_opt(mgos_get_mgr(), listener_spec, tu_conn_mgr, NULL, bopts);
     if (s_listener_conn == NULL) {
       LOG(LL_ERROR, ("Failed to create listener"));
       return 0;
@@ -311,9 +313,10 @@ static IRAM void tu_dispatcher(struct mgos_uart_state *us) {
   }
 }
 
-static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
-                                void *ev_data) {
+static void tu_tcp_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
+                                void *user_data) {
   (void) ev_data;
+  (void) user_data;
 
   mgos_wdt_feed();
 
@@ -366,8 +369,9 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev,
   }
 }
 
-static void tu_ws_conn_handler(struct mg_connection *nc, int ev,
-                               void *ev_data) {
+static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
+                               void *user_data) {
+  (void) user_data;
   mgos_wdt_feed();
 
   switch (ev) {
@@ -454,7 +458,8 @@ static void tu_set_conn(struct mg_connection *nc, bool ws) {
   }
 }
 
-static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
+static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data,
+                        void *user_data) {
   switch (ev) {
     case MG_EV_ACCEPT: {
       char addr[32];
@@ -525,6 +530,8 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data) {
       }
     }
   }
+
+  (void) user_data;
 }
 
 static void tu_conn_mgr_timer_cb(void *arg) {
@@ -549,7 +556,7 @@ static void tu_conn_mgr_timer_cb(void *arg) {
          (copts.ssl_server_name ? copts.ssl_server_name : "-")));
     s_last_connect_attempt = mg_time();
     s_client_conn = mg_connect_opt(mgos_get_mgr(), s_tcfg->client.remote_addr,
-                                   tu_conn_mgr, copts);
+                                   tu_conn_mgr, NULL, copts);
     if (s_client_conn == NULL) {
       LOG(LL_ERROR, ("Connection error: %s", error));
     }
