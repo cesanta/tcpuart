@@ -16,6 +16,7 @@
 #include "fw/src/mgos_timers.h"
 #include "fw/src/mgos_sys_config.h"
 #include "fw/src/mgos_uart.h"
+#include "fw/src/mgos_utils.h"
 
 #if CS_PLATFORM == CS_P_ESP8266
 #include "user_interface.h"
@@ -30,7 +31,6 @@
 #error Unsupported platform
 #endif
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
 #ifndef IRAM
 #define IRAM
 #endif
@@ -127,10 +127,10 @@ static bool init_uart(struct sys_config_uart *ucfg) {
 size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct mgos_uart_state *us) {
   size_t len = 0;
   if (us != NULL) {
-    cs_rbuf_t *utxb = &us->tx_buf;
-    len = MIN(mb->len, utxb->avail);
+    struct mbuf *utxb = &us->tx_buf;
+    len = MIN(mb->len, mgos_uart_txb_avail(us));
     if (len > 0) {
-      cs_rbuf_append(utxb, mb->buf, len);
+      mbuf_append(utxb, mb->buf, len);
       mbuf_remove(mb, len);
       mgos_uart_schedule_dispatcher(us->uart_no, false /* from_isr */);
     }
@@ -251,10 +251,10 @@ static void report_status(struct mg_connection *nc, int force) {
             "tx %u %u %u, thr %u; hf %u i 0x%03x ie 0x%03x cts %d\n",
             uart_no, s->ints - ps->ints, s->rx_ints - ps->rx_ints,
             s->tx_ints - ps->tx_ints, us->rx_enabled,
-            s->rx_bytes - ps->rx_bytes, us->rx_buf.used,
+            s->rx_bytes - ps->rx_bytes, us->rx_buf.len,
             uart_rx_fifo_len(uart_no), s->rx_overflows - ps->rx_overflows,
             s->rx_linger_conts - ps->rx_linger_conts,
-            s->tx_bytes - ps->tx_bytes, us->tx_buf.used,
+            s->tx_bytes - ps->tx_bytes, us->tx_buf.len,
             uart_tx_fifo_len(uart_no), s->tx_throttles - ps->tx_throttles,
             mgos_get_free_heap_size(), uart_raw_ints(uart_no),
             uart_int_mask(uart_no), uart_cts(uart_no));
@@ -267,18 +267,17 @@ static void tu_process_uart(struct mgos_uart_state *us,
                             struct mg_connection *nc) {
   int num_sent = 0;
   if (nc == NULL) return;
-  cs_rbuf_t *urxb = &us->rx_buf;
-  int len = 0;
-  while (urxb->used > 0 &&
+  struct mbuf *urxb = &us->rx_buf;
+  size_t len = 0;
+  while (urxb->len > 0 &&
          (len = (s_tcfg->tx_buf_size - nc->send_mbuf.len)) > 0) {
-    uint8_t *data;
-    len = cs_rbuf_get(urxb, len, &data);
+    len = MIN(len, urxb->len);
     if (nc->flags & MG_F_IS_WEBSOCKET) {
-      mg_send_websocket_frame(nc, WEBSOCKET_OP_BINARY, data, len);
+      mg_send_websocket_frame(nc, WEBSOCKET_OP_BINARY, urxb->buf, len);
     } else {
-      mg_send(nc, data, len);
+      mg_send(nc, urxb->buf, len);
     }
-    cs_rbuf_consume(urxb, len);
+    mbuf_remove(urxb, len);
     num_sent += len;
   }
   if (num_sent > 0) {
@@ -297,12 +296,12 @@ static IRAM void tu_dispatcher(struct mgos_uart_state *us) {
   }
   /* UART -> TCP */
   struct mg_connection *nc = s_conn;
-  cs_rbuf_t *urxb = &us->rx_buf;
-  if (urxb->used > 0) {
+  struct mbuf *urxb = &us->rx_buf;
+  if (urxb->len > 0) {
     tu_uart_processor(us, nc);
     if (s_conn != NULL) {
       /* See if we can unthrottle TCP RX */
-      if (nc->recv_mbuf_limit == 0 && us->tx_buf.avail > 0) {
+      if (nc->recv_mbuf_limit == 0 && mgos_uart_txb_avail(us) > 0) {
         if (s_tcfg->rx_buf_size > 0) {
           nc->recv_mbuf_limit = s_tcfg->rx_buf_size;
         } else {
@@ -380,10 +379,9 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
       size_t len = 0;
       LOG(LL_DEBUG, ("ws frame %d", (int) wm->size));
       if (s_us != NULL) {
-        cs_rbuf_t *utxb = &s_us->tx_buf;
-        len = MIN(wm->size, utxb->avail);
+        len = MIN(wm->size, mgos_uart_txb_avail(s_us));
         if (len > 0) {
-          cs_rbuf_append(utxb, wm->data, len);
+          mbuf_append(&s_us->tx_buf, wm->data, len);
           s_last_activity = mg_time();
         }
       } else {
