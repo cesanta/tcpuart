@@ -128,7 +128,7 @@ size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, struct mgos_uart_state *us) {
   size_t len = 0;
   if (us != NULL) {
     struct mbuf *utxb = &us->tx_buf;
-    len = MIN(mb->len, mgos_uart_txb_avail(us));
+    len = MIN(mb->len, mgos_uart_txb_avail(us->uart_no));
     if (len > 0) {
       mbuf_append(utxb, mb->buf, len);
       mbuf_remove(mb, len);
@@ -301,7 +301,7 @@ static IRAM void tu_dispatcher(struct mgos_uart_state *us) {
     tu_uart_processor(us, nc);
     if (s_conn != NULL) {
       /* See if we can unthrottle TCP RX */
-      if (nc->recv_mbuf_limit == 0 && mgos_uart_txb_avail(us) > 0) {
+      if (nc->recv_mbuf_limit == 0 && mgos_uart_txb_avail(us->uart_no) > 0) {
         if (s_tcfg->rx_buf_size > 0) {
           nc->recv_mbuf_limit = s_tcfg->rx_buf_size;
         } else {
@@ -379,7 +379,7 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
       size_t len = 0;
       LOG(LL_DEBUG, ("ws frame %d", (int) wm->size));
       if (s_us != NULL) {
-        len = MIN(wm->size, mgos_uart_txb_avail(s_us));
+        len = MIN(wm->size, mgos_uart_txb_avail(s_us->uart_no));
         if (len > 0) {
           mbuf_append(&s_us->tx_buf, wm->data, len);
           s_last_activity = mg_time();
