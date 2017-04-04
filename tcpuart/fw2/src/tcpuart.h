@@ -16,8 +16,7 @@
  * An app based on TCPUART can perform local processing of some data this way.
  * Default implementation does nothing and just forwards everything.
  */
-typedef void (*tu_uart_processor_fn)(struct mgos_uart_state *us,
-                                     struct mg_connection *nc);
+typedef void (*tu_uart_processor_fn)(int uart_no, struct mg_connection *nc);
 extern tu_uart_processor_fn tu_uart_processor;
 
 enum mgos_app_init_result tu_processor_init(void);
