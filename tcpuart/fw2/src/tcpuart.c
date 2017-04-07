@@ -247,7 +247,7 @@ static void report_status(struct mg_connection *nc, int force) {
             "lcs %u; "
             "tx %u %u %u, thr %u; hf %u i 0x%03x ie 0x%03x cts %d\n",
             uart_no, s->ints - ps->ints, s->rx_ints - ps->rx_ints,
-            s->tx_ints - ps->tx_ints, mgos_uart_rx_enabled(uart_no),
+            s->tx_ints - ps->tx_ints, mgos_uart_is_rx_enabled(uart_no),
             s->rx_bytes - ps->rx_bytes, mgos_uart_read_avail(uart_no),
             uart_rx_fifo_len(uart_no), s->rx_overflows - ps->rx_overflows,
             s->rx_linger_conts - ps->rx_linger_conts,
