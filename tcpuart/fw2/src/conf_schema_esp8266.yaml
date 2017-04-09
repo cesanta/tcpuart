@@ -1,6 +1,5 @@
 [
-  ["dns_sd.service_name", "tcpuart-??????"],
-  ["dns_sd.service_type", "_tcpuart._tcp"],
+  ["dns_sd.host_name", "tcpuart-??????"],
   ["wifi.ap.keep_enabled", false],
 
   # ESP (LWIP) supports fine-grained control over keepalive.
