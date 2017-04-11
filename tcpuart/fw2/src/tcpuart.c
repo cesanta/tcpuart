@@ -105,9 +105,14 @@ static bool init_uart(struct sys_config_uart *ucfg) {
   cfg.dev.rx_fifo_fc_thresh = ucfg->rx_fifo_fc_thresh;
   cfg.dev.rx_fifo_alarm = ucfg->rx_fifo_alarm;
   cfg.dev.tx_fifo_empty_thresh = ucfg->tx_fifo_empty_thresh;
-#endif
 #if CS_PLATFORM == CS_P_ESP8266
   cfg.dev.swap_rxcts_txrts = ucfg->swap_rxcts_txrts;
+#else
+  if (ucfg->rx_gpio >= 0) cfg.dev.rx_gpio = ucfg->rx_gpio;
+  if (ucfg->tx_gpio >= 0) cfg.dev.tx_gpio = ucfg->tx_gpio;
+  if (ucfg->cts_gpio >= 0) cfg.dev.cts_gpio = ucfg->cts_gpio;
+  if (ucfg->rts_gpio >= 0) cfg.dev.rts_gpio = ucfg->rts_gpio;
+#endif
 #endif
   if (!mgos_uart_configure(ucfg->uart_no, &cfg)) {
     LOG(LL_ERROR, ("UART init failed"));

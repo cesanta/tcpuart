@@ -6,4 +6,9 @@
   ["uart.rx_fifo_fc_thresh", "i", 110, {"hide": true}],
   ["uart.rx_fifo_alarm", "i", 20, {"hide": true}],
   ["uart.tx_fifo_empty_thresh", "i", 40, {"hide": true}],
+
+  ["uart.rx_gpio", "i", -1, {"hide": true}],
+  ["uart.tx_gpio", "i", -1, {"hide": true}],
+  ["uart.cts_gpio", "i", -1, {"hide": true}],
+  ["uart.rts_gpio", "i", -1, {"hide": true}],
 ]
