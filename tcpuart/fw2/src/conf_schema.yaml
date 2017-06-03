@@ -4,7 +4,6 @@
   ["wifi.ap.pass", ""],
   ["debug.stdout_uart", 1],
   ["debug.stderr_uart", 1],
-  ["mqtt.enable", false],
 
   ["tcp", "o", {"title": "TCP settings"}],
   ["tcp.listener", "o", {"title": "Listener"}],
