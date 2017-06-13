@@ -1,0 +1,2 @@
+config_schema:
+  - ["tcp.keepalive.enable", "b", true, {"title": "Enable TCP keepalive"}]

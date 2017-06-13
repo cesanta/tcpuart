@@ -1,3 +1,0 @@
-[
-  ["tcp.keepalive.enable", "b", true, {"title": "Enable TCP keepalive"}],
-]
