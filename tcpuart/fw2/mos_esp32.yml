@@ -12,3 +12,5 @@ config_schema:
   - ["uart.cts_gpio", "i", -1, {"hide": true}]
   - ["uart.rts_gpio", "i", -1, {"hide": true}]
 
+libs:
+  - origin: https://github.com/mongoose-os-libs/dns-sd

@@ -18,3 +18,6 @@ config_schema:
 
 build_vars:
   MGOS_DEBUG_UART: 1
+
+libs:
+  - origin: https://github.com/mongoose-os-libs/dns-sd
