@@ -96,10 +96,10 @@ static bool init_uart(struct sys_config_uart *ucfg) {
   mgos_uart_config_set_defaults(ucfg->uart_no, &cfg);
   cfg.baud_rate = ucfg->baud_rate;
   cfg.rx_buf_size = ucfg->rx_buf_size;
-  cfg.rx_fc_ena = ucfg->rx_fc_ena;
+  cfg.rx_fc_type = (ucfg->rx_fc_ena ? MGOS_UART_FC_HW : MGOS_UART_FC_NONE);
   cfg.rx_linger_micros = ucfg->rx_linger_micros;
   cfg.tx_buf_size = ucfg->tx_buf_size;
-  cfg.tx_fc_ena = ucfg->tx_fc_ena;
+  cfg.tx_fc_type = (ucfg->tx_fc_ena ? MGOS_UART_FC_HW : MGOS_UART_FC_NONE);
 #if CS_PLATFORM == CS_P_ESP32 || CS_PLATFORM == CS_P_ESP8266
   cfg.dev.rx_fifo_full_thresh = ucfg->rx_fifo_full_thresh;
   cfg.dev.rx_fifo_fc_thresh = ucfg->rx_fifo_fc_thresh;
@@ -123,7 +123,7 @@ static bool init_uart(struct sys_config_uart *ucfg) {
     mgos_uart_set_rx_enabled(ucfg->uart_no, true);
   }
   LOG(LL_INFO, ("UART%d configured: %d fc %d/%d", ucfg->uart_no, cfg.baud_rate,
-                cfg.rx_fc_ena, cfg.tx_fc_ena));
+                cfg.rx_fc_type, cfg.tx_fc_type));
   s_ucfg = ucfg;
   return true;
 }
