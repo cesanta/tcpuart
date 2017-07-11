@@ -229,7 +229,7 @@ int uart_tx_fifo_len(int uart_no) {
 }
 
 static void report_status(struct mg_connection *nc, int force) {
-  int uart_no = s_ucfg->uart_no;
+  int uart_no = (s_ucfg == NULL) ? -1 : s_ucfg->uart_no;
   double now = mg_time();
   if (nc != NULL && s_tcfg->status_interval_ms > 0 &&
       (force ||
@@ -373,8 +373,8 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
 
 static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
                                void *user_data) {
-  int uart_no = s_ucfg->uart_no;
   mgos_wdt_feed();
+  int uart_no = (s_ucfg == NULL) ? -1 : s_ucfg->uart_no;
 
   switch (ev) {
     case MG_EV_WEBSOCKET_FRAME: {
