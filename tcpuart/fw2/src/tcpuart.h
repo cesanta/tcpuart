@@ -8,8 +8,8 @@
 
 #include "mongoose/mongoose.h"
 
-#include "fw/src/mgos_app.h"
-#include "fw/src/mgos_uart.h"
+#include "mgos_app.h"
+#include "mgos_uart.h"
 
 /*
  * A hook to pre-process data in the UART buffer.
