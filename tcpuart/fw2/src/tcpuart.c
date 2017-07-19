@@ -566,7 +566,7 @@ static void tu_conn_mgr_timer_cb(void *arg) {
 }
 
 #if CS_PLATFORM != CS_P_ESP8266 && CS_PLATFORM != CS_P_ESP32
-bool mgos_pwm_set(int pin, int freq, int duty) {
+bool mgos_pwm_set(int pin, int freq, float duty) {
   /* TODO(rojer) */
   (void) pin;
   (void) freq;
