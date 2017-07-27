@@ -11,6 +11,10 @@
 #include "mgos_app.h"
 #include "mgos_uart.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * A hook to pre-process data in the UART buffer.
  * An app based on TCPUART can perform local processing of some data this way.
@@ -20,5 +24,9 @@ typedef void (*tu_uart_processor_fn)(int uart_no, struct mg_connection *nc);
 extern tu_uart_processor_fn tu_uart_processor;
 
 enum mgos_app_init_result tu_processor_init(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CS_PROJECTS_TCPUART_FW2_SRC_TCPUART_H_ */
