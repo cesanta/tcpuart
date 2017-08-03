@@ -565,16 +565,6 @@ static void tu_conn_mgr_timer_cb(void *arg) {
   (void) arg;
 }
 
-#if CS_PLATFORM != CS_P_ESP8266 && CS_PLATFORM != CS_P_ESP32
-bool mgos_pwm_set(int pin, int freq, float duty) {
-  /* TODO(rojer) */
-  (void) pin;
-  (void) freq;
-  (void) duty;
-  return false;
-}
-#endif
-
 enum mgos_app_init_result tu_processor_init(void) __attribute__((weak));
 enum mgos_app_init_result tu_processor_init(void) {
   return MGOS_APP_INIT_SUCCESS;
