@@ -67,4 +67,4 @@ cdefs:
   CS_LOG_ENABLE_TS_DIFF: 1
   MG_LWIP_SSL_RECV_MBUF_LIMIT: 1024
 
-skeleton_version: 2017-05-18
+manifest_version: 2017-05-18
