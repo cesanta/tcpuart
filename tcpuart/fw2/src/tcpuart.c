@@ -23,10 +23,10 @@
 #include "fw/platforms/esp8266/src/esp_uart.h"
 #elif CS_PLATFORM == CS_P_ESP32
 #include "fw/platforms/esp32/src/esp32_uart.h"
-#elif CS_PLATFORM == CS_P_CC3200
-#include "hw_types.h"
+#elif CS_PLATFORM == CS_P_CC3200 || CS_PLATFORM == CS_P_CC3220
+#include "inc/hw_types.h"
 #include "driverlib/uart.h"
-#include "fw/platforms/cc3200/src/cc3200_uart.h"
+#include "cc32xx_uart.h"
 #else
 #error Unsupported platform
 #endif
@@ -181,8 +181,8 @@ static int uart_cts(int uart_no) {
   return esp_uart_cts(uart_no);
 #elif CS_PLATFORM == CS_P_ESP32
   return esp32_uart_cts(uart_no);
-#elif CS_PLATFORM == CS_P_CC3200
-  return cc3200_uart_cts(uart_no);
+#elif CS_PLATFORM == CS_P_CC3200 || CS_P_CC3200 == CS_P_CC3220
+  return cc32xx_uart_cts(uart_no);
 #endif
 }
 
@@ -191,8 +191,8 @@ static uint32_t uart_raw_ints(int uart_no) {
   return esp_uart_raw_ints(uart_no);
 #elif CS_PLATFORM == CS_P_ESP32
   return esp32_uart_raw_ints(uart_no);
-#elif CS_PLATFORM == CS_P_CC3200
-  return cc3200_uart_raw_ints(uart_no);
+#elif CS_PLATFORM == CS_P_CC3200 || CS_P_CC3200 == CS_P_CC3220
+  return cc32xx_uart_raw_ints(uart_no);
 #endif
 }
 
@@ -201,8 +201,8 @@ static uint32_t uart_int_mask(int uart_no) {
   return esp_uart_int_mask(uart_no);
 #elif CS_PLATFORM == CS_P_ESP32
   return esp32_uart_int_mask(uart_no);
-#elif CS_PLATFORM == CS_P_CC3200
-  return cc3200_uart_int_mask(uart_no);
+#elif CS_PLATFORM == CS_P_CC3200 || CS_P_CC3200 == CS_P_CC3220
+  return cc32xx_uart_int_mask(uart_no);
 #endif
 }
 
@@ -211,9 +211,9 @@ int uart_rx_fifo_len(int uart_no) {
   return esp_uart_rx_fifo_len(uart_no);
 #elif CS_PLATFORM == CS_P_ESP32
   return esp32_uart_rx_fifo_len(uart_no);
-#elif CS_PLATFORM == CS_P_CC3200
+#elif CS_PLATFORM == CS_P_CC3200 || CS_P_CC3200 == CS_P_CC3220
   /* It's not possible to get exact FIFO length on CC3200. */
-  return UARTCharsAvail(cc3200_uart_get_base(uart_no));
+  return UARTCharsAvail(cc32xx_uart_get_base(uart_no));
 #endif
 }
 
@@ -222,9 +222,9 @@ int uart_tx_fifo_len(int uart_no) {
   return esp_uart_tx_fifo_len(uart_no);
 #elif CS_PLATFORM == CS_P_ESP32
   return esp32_uart_tx_fifo_len(uart_no);
-#elif CS_PLATFORM == CS_P_CC3200
+#elif CS_PLATFORM == CS_P_CC3200 || CS_P_CC3200 == CS_P_CC3220
   /* It's not possible to get exact FIFO length on CC3200. */
-  return (UARTSpaceAvail(cc3200_uart_get_base(uart_no)) == 0);
+  return (UARTSpaceAvail(cc32xx_uart_get_base(uart_no)) == 0);
 #endif
 }
 
