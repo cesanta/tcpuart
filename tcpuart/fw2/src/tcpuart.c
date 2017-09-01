@@ -12,7 +12,6 @@
 #include "mgos_app.h"
 #include "mgos_hal.h"
 #include "mgos_mongoose.h"
-#include "mgos_pwm.h"
 #include "mgos_timers.h"
 #include "mgos_sys_config.h"
 #include "mgos_uart.h"
@@ -29,6 +28,17 @@
 #include "cc32xx_uart.h"
 #else
 #error Unsupported platform
+#endif
+
+#ifdef MGOS_HAVE_PWM
+#include "mgos_pwm.h"
+#else
+bool mgos_pwm_set(int pin, int freq, float duty) {
+  (void) pin;
+  (void) freq;
+  (void) duty;
+  return false;
+}
 #endif
 
 #ifndef IRAM
