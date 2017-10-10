@@ -45,9 +45,9 @@ bool mgos_pwm_set(int pin, int freq, float duty) {
 #define IRAM
 #endif
 
-static struct sys_config_tcp *s_tcfg = NULL;
-static struct sys_config_uart *s_ucfg = NULL;
-static struct sys_config_misc *s_mcfg = NULL;
+static const struct mgos_config_tcp *s_tcfg = NULL;
+static const struct mgos_config_uart *s_ucfg = NULL;
+static const struct mgos_config_misc *s_mcfg = NULL;
 
 static struct mg_connection *s_conn = NULL;
 static struct mg_connection *s_client_conn = NULL;
@@ -70,7 +70,7 @@ static IRAM void tu_dispatcher(int uart_no, void *arg);
 
 tu_uart_processor_fn tu_uart_processor;
 
-static bool init_tcp(struct sys_config_tcp *cfg) {
+static bool init_tcp(const struct mgos_config_tcp *cfg) {
   char listener_spec[100];
   struct mg_bind_opts bopts;
   memset(&bopts, 0, sizeof(bopts));
@@ -97,7 +97,7 @@ static bool init_tcp(struct sys_config_tcp *cfg) {
   return true;
 }
 
-static bool init_uart(struct sys_config_uart *ucfg) {
+static bool init_uart(const struct mgos_config_uart *ucfg) {
   if (ucfg->uart_no < 0) {
     LOG(LL_INFO, ("UART is disabled"));
     return true;
@@ -581,11 +581,11 @@ enum mgos_app_init_result tu_processor_init(void) {
 }
 
 enum mgos_app_init_result mgos_app_init(void) {
-  s_mcfg = &get_cfg()->misc;
+  s_mcfg = mgos_sys_config_get_misc();
   s_last_activity = mg_time();
   LOG(LL_INFO, ("TCPUART init"));
-  if (!init_tcp(&get_cfg()->tcp)) return MGOS_APP_INIT_ERROR;
-  if (!init_uart(&get_cfg()->uart)) return MGOS_APP_INIT_ERROR;
+  if (!init_tcp(mgos_sys_config_get_tcp())) return MGOS_APP_INIT_ERROR;
+  if (!init_uart(mgos_sys_config_get_uart())) return MGOS_APP_INIT_ERROR;
   tu_uart_processor = tu_process_uart;
   return tu_processor_init();
 }
