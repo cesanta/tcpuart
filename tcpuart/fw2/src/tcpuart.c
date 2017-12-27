@@ -80,7 +80,7 @@ static bool init_tcp(const struct mgos_config_tcp *cfg) {
       bopts.ssl_cert = cfg->listener.tls.cert;
     }
     LOG(LL_INFO, ("Listening on %s (%s, %s)", listener_spec,
-                  (cfg->listener.ws.enable ? "WS" : ""),
+                  (cfg->listener.ws.enable ? "WS" : "no WS"),
                   (bopts.ssl_cert ? bopts.ssl_cert : "no SSL")));
     s_listener_conn =
         mg_bind_opt(mgos_get_mgr(), listener_spec, tu_conn_mgr, NULL, bopts);
@@ -303,24 +303,18 @@ static IRAM void tu_dispatcher(int uart_no, void *arg) {
   /* TCP -> UART */
   /* Drain buffer left from a previous connection, if any. */
   if (s_tcp_rx_tail.len > 0) {
+    LOG(LL_DEBUG,
+        ("There are %d bytes in the tail, dispatching", s_tcp_rx_tail.len));
     tu_dispatch_tcp_to_uart(&s_tcp_rx_tail, uart_no);
     mbuf_trim(&s_tcp_rx_tail);
   }
+
   /* UART -> TCP */
   struct mg_connection *nc = s_conn;
   if (mgos_uart_read_avail(uart_no) > 0) {
     tu_uart_processor(uart_no, nc);
-    if (s_conn != NULL) {
-      /* See if we can unthrottle TCP RX */
-      if (nc->recv_mbuf_limit == 0 && mgos_uart_write_avail(uart_no) > 0) {
-        if (s_tcfg->rx_buf_size > 0) {
-          nc->recv_mbuf_limit = s_tcfg->rx_buf_size;
-        } else {
-          nc->recv_mbuf_limit = ~0;
-        }
-      }
-    }
   }
+
   (void) arg;
 }
 
@@ -365,6 +359,8 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
             s_tcp_rx_tail.buf = nc->recv_mbuf.buf;
             nc->recv_mbuf.buf = NULL;
             nc->recv_mbuf.len = 0;
+            LOG(LL_DEBUG,
+                ("Rescued %d bytes from closed conn", s_tcp_rx_tail.len));
           } else {
             LOG(LL_WARN,
                 ("Dropped %d bytes on the floor", (int) nc->recv_mbuf.len));

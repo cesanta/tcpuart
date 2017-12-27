@@ -20,16 +20,16 @@ int main(int argc, char *argv[]) {
   for (;;) {
     int r;
     FD_ZERO(&read_set);
-    FD_SET(0, &read_set);
+    FD_SET(STDIN_FILENO, &read_set);
     tv.tv_sec = 1;
     tv.tv_usec = 0;
-    r = select(1, &read_set, &write_set, &err_set, &tv);
+    r = select(STDOUT_FILENO, &read_set, &write_set, &err_set, &tv);
     if (r == 0) continue;
     if (r < 0) {
       perror("select");
       return 1;
     }
-    while ((r = read(0, buf, sizeof(buf))) < 0 && errno == EINTR) {
+    while ((r = read(STDIN_FILENO, buf, sizeof(buf))) < 0 && errno == EINTR) {
     };
     if (r < 0) {
       perror("read");
@@ -38,7 +38,7 @@ int main(int argc, char *argv[]) {
     if (r == 0) {
       continue;
     }
-    write(1, buf, r);
+    write(STDOUT_FILENO, buf, r);
   }
   return 0;
 }
