@@ -115,15 +115,15 @@
       width: 9em;
   }
 
+  .btn-save {
+    background-color: #3f9531;
+  }
   .btn-reset {
       background-color: #CC4648;
   }
-  .btn-reboot {
-      background-color: #cc4648;
-  }
-  .btn-save {
-      background-color: #3f9531;
-      float: right;
+
+  .button:disabled {
+    background-color: gray;
   }
 
   .panel.disabled input {
@@ -142,36 +142,155 @@
     color: white; background: #fbb117; font-weight: bold;
   }
   </style>
+  <script src="zepto.min.js"></script>
 
-  <script type="text/javascript" src="conflib.js"></script>
-  <script type="text/javascript">
-    var SCHEMA = [];
-    var DEFAULTS = {};  // System defaults config
-    var CURRENT = {};  // Configuration object. Gets set up on window load
+  <script>
+
+    // Configuration object. Gets set up on window load
+    var cfg_current = {};
+
     window.onload = function() {
-      document.getElementById('btn_save').onclick = function() {
-        confSave(SCHEMA, DEFAULTS, CURRENT);
-      }
-      document.getElementById('btn_reboot').onclick = confReboot;
-      document.getElementById('btn_reset').onclick = confReset;
+      controlsEnableDisable(false);
 
-      confLoad(function(schema, defaults, current) {
-        SCHEMA = schema;
-        DEFAULTS = defaults;
-        CURRENT = current;
-        document.getElementById('loading').style.display = 'none';
-        console.log('Config:', current);
+      // Set "Save" button handler {{{
+      document.getElementById('btn_save').onclick = function() {
+        controlsEnableDisable(false);
         var els = document.getElementsByClassName('form-control');
         for (var i = 0; i < els.length; i++) {
           var id = els[i].id;
-          var val = confGet(current, id);
-          if (val === undefined) console.error('Unknown conf key:', id);
-          setElementValue(els[i], confGet(current, id));
+          if (!confSet(cfg_current, id, els[i])) {
+            console.error('Unable to set', id);
+          }
         }
+
+        $.ajax({
+          url: '/rpc/Config.Set',
+          data: JSON.stringify({
+            config: cfg_current,
+          }),
+          type: 'POST',
+          success: function(data) {
+            console.log("Saving...");
+            $.ajax({
+              url: '/rpc/Config.Save',
+              type: 'POST',
+              data: JSON.stringify({"reboot": true}),
+              complete: function() {
+                console.log("done");
+              },
+            });
+            setTimeout(function() {
+              loadConfig();
+            }, 3000);
+          },
+        })
+      }
+      // }}}
+
+      loadConfig();
+    }
+
+    // Loads config from the device and populates the form.
+    function loadConfig() {
+      controlsEnableDisable(false);
+
+      $.ajax({
+        url: '/rpc/Config.Get',
+        complete: function() {
+          controlsEnableDisable(true);
+        },
+        success: function(data) {
+          cfg_current = data;
+
+          document.getElementById('loading').style.display = 'none';
+          console.log('Config:', cfg_current);
+          var els = document.getElementsByClassName('form-control');
+          for (var i = 0; i < els.length; i++) {
+            var id = els[i].id;
+            var val = confGet(cfg_current, id);
+            if (val === undefined) {
+              console.error('Unknown conf key:', id);
+            } else {
+              if (typeof val !== "boolean") {
+                els[i].value = val;
+              } else {
+                els[i].checked = val;
+              }
+            }
+          }
+        },
       });
+    }
+
+    // Returns a config value from a config object `cfg` by its id like
+    // "wifi.ap.ssid"
+    function confGet(cfg, id) {
+      let items = id.split(".");
+      let c = cfg;
+      for (let i = 0; i < items.length; i++) {
+        if (typeof c !== "object" || !(items[i] in c)) {
+          return undefined;
+        }
+
+        c = c[items[i]];
+      }
+
+      return c;
+    }
+
+    // Sets a config value in a config object `cfg` by its id like
+    // "wifi.ap.ssid". Value is taken from an element `el`: for text and
+    // numeric values it should be a text input, for booleans it should be a
+    // checkbox.
+    //
+    // New value should have the same type as the existing one.
+    function confSet(cfg, id, el) {
+      let items = id.split(".");
+
+      if (items.length == 0) {
+        return false;
+      }
+
+      let o = cfg;
+      let key = items[0];
+
+      for (let i = 1; i < items.length; i++) {
+        if (typeof o !== "object" || !(key in o)) {
+          return false;
+        }
+
+        o = o[key];
+        key = items[i];
+      }
+
+      if (typeof o !== "object" || !(key in o)) {
+        return false;
+      }
+
+      switch (typeof o[key]) {
+        case "number":
+          o[key] = Number(el.value);
+          break;
+        case "string":
+          o[key] = el.value;
+          break;
+        case "boolean":
+          o[key] = el.checked;
+          break;
+        default:
+          return false;
+      }
+      return true;
+    }
+
+    // Enables or disables all form controls.
+    function controlsEnableDisable(en) {
+      $('.form-control').prop("disabled", !en);
+      $('.button').prop("disabled", !en);
     }
   </script>
 </head>
+
 <body>
   <div id="loading">Loading, please wait...</div>
 
@@ -306,7 +425,7 @@
     </div>
     <div class="panel" id="uart_panel">
       <div class="form-group">
-        <label class="control-label for="uart.baud_rate"" >Baud Rate</label>
+        <label class="control-label" for="uart.baud_rate">Baud Rate</label>
         <input id="uart.baud_rate" type="text"
           class="form-control form-control-n" />
       </div>
@@ -322,13 +441,6 @@
           TX hardware flow control
         </label>
         <input type="checkbox" id="uart.tx_fc_ena"
-          class="checkbox-primary form-control" />
-      </div>
-      <div class="form-group">
-        <label class="control-label" for="uart.swap_rxcts_txrts">
-          Swap RX&lt;-&gt;CTS, TX&lt;-&gt;RTS
-        </label>
-        <input type="checkbox" id="uart.swap_rxcts_txrts"
           class="checkbox-primary form-control" />
       </div>
     </div>
@@ -358,12 +470,10 @@
   <div class="row">
     <div class="panel-heading"></div>
     <div class="panel" style="border: none;">
-      <input id="btn_reboot" type="button" value="Reboot"
-        class="button btn-reboot"/>
-      <input id="btn_reset" type="button" value="Factory Reset"
-        class="button btn-reset"/>
       <input id="btn_save" type="button" value="Save Settings"
         class="button btn-save"/>
+      <input id="btn_reset" type="button" value="Factory Reset"
+        class="button btn-reset"/>
     </div>
   </div>
 
