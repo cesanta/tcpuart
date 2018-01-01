@@ -187,6 +187,28 @@
       }
       // }}}
 
+      // Set "Factory reset" button handler {{{
+      document.getElementById('btn_reset').onclick = function() {
+        controlsEnableDisable(false);
+        $.ajax({
+          url: '/rpc/FS.Remove',
+          data: JSON.stringify({
+            filename: "conf9.json",
+          }),
+          type: 'POST',
+          success: function(data) {
+            $.ajax({
+              url: '/rpc/Sys.Reboot',
+              type: 'POST',
+            });
+            setTimeout(function() {
+              loadConfig();
+            }, 3000);
+          },
+        })
+      }
+      // }}}
+
       loadConfig();
     }
 
