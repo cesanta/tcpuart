@@ -1,9 +1,10 @@
 /*
- * Copyright (c) 2014-2016 Cesanta Software Limited
+ * Copyright (c) 2014-2018 Cesanta Software Limited
  * All rights reserved
  */
 
 #include "tcpuart.h"
+#include "bt_svc.h"
 
 #include <stdbool.h>
 
@@ -49,7 +50,9 @@ static const struct mgos_config_tcp *s_tcfg = NULL;
 static const struct mgos_config_uart *s_ucfg = NULL;
 static const struct mgos_config_misc *s_mcfg = NULL;
 
-static struct mg_connection *s_conn = NULL;
+static struct tu_conn s_tu_conn = {
+    .type = TU_CONN_TYPE_NONE,
+};
 static struct mg_connection *s_client_conn = NULL;
 static struct mg_connection *s_listener_conn = NULL;
 static double s_last_connect_attempt = 0;
@@ -58,6 +61,8 @@ static double s_last_activity = 0;
 static double s_last_tcp_status_report = 0;
 static double s_last_uart_status_report = 0;
 static struct mgos_uart_stats s_prev_stats;
+
+static struct mbuf s_bt_buf_rx;
 
 static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data,
                         void *user_data);
@@ -69,6 +74,12 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
 static IRAM void tu_dispatcher(int uart_no, void *arg);
 
 tu_uart_processor_fn tu_uart_processor;
+
+static char *stringify_tu_conn(const struct tu_conn *c) {
+  /* TODO(dfrank) stringify the connection properly */
+  (void) c;
+  return "conn";
+}
 
 static bool init_tcp(const struct mgos_config_tcp *cfg) {
   char listener_spec[100];
@@ -138,7 +149,7 @@ static bool init_uart(const struct mgos_config_uart *ucfg) {
   return true;
 }
 
-size_t tu_dispatch_tcp_to_uart(struct mbuf *mb, int uart_no) {
+size_t tu_dispatch_to_uart(struct mbuf *mb, int uart_no) {
   size_t len = 0;
   if (uart_no >= 0) {
     len = MIN(mb->len, mgos_uart_write_avail(uart_no));
@@ -275,27 +286,53 @@ static void report_status(struct mg_connection *nc, int force) {
   }
 }
 
-static void tu_process_uart(int uart_no, struct mg_connection *nc) {
-  int num_sent = 0;
-  if (nc == NULL) return;
-  size_t len = 0;
-  while (mgos_uart_read_avail(uart_no) > 0 &&
-         (len = (s_tcfg->tx_buf_size - nc->send_mbuf.len)) > 0) {
-    len = MIN(len, mgos_uart_read_avail(uart_no));
-    char *b = (char *) malloc(len);
-    len = mgos_uart_read(uart_no, b, len);
-    if (nc->flags & MG_F_IS_WEBSOCKET) {
-      mg_send_websocket_frame(nc, WEBSOCKET_OP_BINARY, b, len);
-    } else {
-      mg_send(nc, b, len);
-    }
-    free(b);
-    num_sent += len;
-  }
-  if (num_sent > 0) {
-    LOG(LL_DEBUG, ("UART -> %d -> %s", num_sent,
-                   (nc->flags & MG_F_IS_WEBSOCKET ? "WS" : "TCP")));
-    s_last_activity = mg_time();
+static void tu_process_uart(int uart_no, struct tu_conn *tu_conn) {
+  switch (s_tu_conn.type) {
+    case TU_CONN_TYPE_TCP: {
+      struct mg_connection *nc = tu_conn->conn;
+      size_t len = 0;
+      int num_sent = 0;
+      while (mgos_uart_read_avail(uart_no) > 0 &&
+             (len = (s_tcfg->tx_buf_size - nc->send_mbuf.len)) > 0) {
+        len = MIN(len, mgos_uart_read_avail(uart_no));
+        char *b = (char *) malloc(len);
+        len = mgos_uart_read(uart_no, b, len);
+        if (nc->flags & MG_F_IS_WEBSOCKET) {
+          mg_send_websocket_frame(nc, WEBSOCKET_OP_BINARY, b, len);
+        } else {
+          mg_send(nc, b, len);
+        }
+        free(b);
+        num_sent += len;
+      }
+      if (num_sent > 0) {
+        LOG(LL_DEBUG, ("UART -> %d -> %s", num_sent,
+                       (nc->flags & MG_F_IS_WEBSOCKET ? "WS" : "TCP")));
+        s_last_activity = mg_time();
+      }
+    } break;
+
+    case TU_CONN_TYPE_BT_GATTS:
+      while (mgos_uart_read_avail(uart_no) > 0) {
+        size_t len = MIN(
+            mgos_uart_read_avail(uart_no),
+            mgos_sys_config_get_tu_bt_tx_buf_size() - tu_bt_get_tx_buf_len());
+        if (len <= 0) {
+          break;
+        }
+        char *b = (char *) malloc(len);
+        len = mgos_uart_read(uart_no, b, len);
+
+        bool ok = tu_bt_send(tu_conn->tubc, mg_mk_str_n(b, len));
+        if (ok) {
+          LOG(LL_DEBUG, ("UART -> %d -> BT", len));
+        }
+        free(b);
+      }
+      break;
+
+    case TU_CONN_TYPE_NONE:
+      break;
   }
 }
 
@@ -305,17 +342,49 @@ static IRAM void tu_dispatcher(int uart_no, void *arg) {
   if (s_tcp_rx_tail.len > 0) {
     LOG(LL_DEBUG,
         ("There are %d bytes in the tail, dispatching", s_tcp_rx_tail.len));
-    tu_dispatch_tcp_to_uart(&s_tcp_rx_tail, uart_no);
+    tu_dispatch_to_uart(&s_tcp_rx_tail, uart_no);
     mbuf_trim(&s_tcp_rx_tail);
   }
 
+  if (s_bt_buf_rx.len > 0) {
+    LOG(LL_DEBUG,
+        ("There are %d bytes in the bt buffer, dispatching", s_bt_buf_rx.len));
+    tu_dispatch_to_uart(&s_bt_buf_rx, uart_no);
+  }
+
   /* UART -> TCP */
-  struct mg_connection *nc = s_conn;
-  if (mgos_uart_read_avail(uart_no) > 0) {
-    tu_uart_processor(uart_no, nc);
+  switch (s_tu_conn.type) {
+    case TU_CONN_TYPE_NONE:
+      /* Do nothing: will just accumulate UART data */
+      break;
+
+    case TU_CONN_TYPE_TCP:
+    case TU_CONN_TYPE_BT_GATTS: {
+      if (mgos_uart_read_avail(uart_no) > 0) {
+        tu_uart_processor(uart_no, &s_tu_conn);
+      }
+    } break;
   }
 
   (void) arg;
+}
+
+static void close_cur_conn(void) {
+  switch (s_tu_conn.type) {
+    case TU_CONN_TYPE_TCP:
+      s_tu_conn.conn->flags |= MG_F_SEND_AND_CLOSE;
+      s_tu_conn.conn = NULL;
+      break;
+
+    case TU_CONN_TYPE_BT_GATTS:
+      tu_bt_close(s_tu_conn.tubc);
+      break;
+
+    case TU_CONN_TYPE_NONE:
+      /* Nothing to do */
+      break;
+  }
+  s_tu_conn.type = TU_CONN_TYPE_NONE;
 }
 
 static void tu_tcp_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
@@ -331,7 +400,7 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
       /* If there is a tail from previous conn, we need it to drain first. */
       if (s_tcp_rx_tail.len > 0) break;
       /* TCP -> UART */
-      size_t len = tu_dispatch_tcp_to_uart(&nc->recv_mbuf, s_ucfg->uart_no);
+      size_t len = tu_dispatch_to_uart(&nc->recv_mbuf, s_ucfg->uart_no);
       if (len > 0) {
         LOG(LL_DEBUG, ("UART <- %d <- TCP", (int) len));
         s_last_activity = mg_time();
@@ -347,7 +416,7 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
     case MG_EV_CLOSE: {
       LOG(LL_INFO, ("%p closed", nc));
       report_status(nc, 1 /* force */);
-      if (nc == s_conn) {
+      if (s_tu_conn.type == TU_CONN_TYPE_TCP && nc == s_tu_conn.conn) {
         if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
           mgos_uart_set_rx_enabled(s_ucfg->uart_no, false);
         }
@@ -366,7 +435,7 @@ static void tu_tcp_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
                 ("Dropped %d bytes on the floor", (int) nc->recv_mbuf.len));
           }
         }
-        s_conn = NULL;
+        close_cur_conn();
       }
       if (nc == s_client_conn) {
         s_client_conn = NULL;
@@ -416,11 +485,11 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
     case MG_EV_CLOSE: {
       LOG(LL_INFO, ("%p closed", nc));
       report_status(nc, 1 /* force */);
-      if (nc == s_conn) {
+      if (s_tu_conn.type == TU_CONN_TYPE_TCP && nc == s_tu_conn.conn) {
         if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
           mgos_uart_set_rx_enabled(s_ucfg->uart_no, false);
         }
-        s_conn = NULL;
+        close_cur_conn();
       }
       if (nc == s_client_conn) {
         s_client_conn = NULL;
@@ -432,19 +501,19 @@ static void tu_ws_conn_handler(struct mg_connection *nc, int ev, void *ev_data,
   (void) user_data;
 }
 
-static void tu_set_conn(struct mg_connection *nc, bool ws) {
+static void tu_set_conn_tcp(struct mg_connection *nc, bool ws) {
   LOG(LL_INFO, ("New conn: %p%s", nc, (ws ? " (WS)" : "")));
-  if (s_conn != NULL) {
-    if (s_tcfg->evict_old) {
-      LOG(LL_INFO, ("Evicting %p", s_conn));
-      s_conn->flags |= MG_F_SEND_AND_CLOSE;
-      s_conn = NULL;
+  if (s_tu_conn.type != TU_CONN_TYPE_NONE) {
+    if (mgos_sys_config_get_tu_evict_old()) {
+      LOG(LL_INFO, ("Evicting %p", s_tu_conn.conn));
+      close_cur_conn();
     } else {
-      LOG(LL_INFO, ("%p already in place, dropping %p", s_conn, nc));
+      LOG(LL_INFO, ("Conn is already in place, dropping %p", nc));
       nc->flags |= MG_F_CLOSE_IMMEDIATELY;
       return;
     }
   }
+
   nc->handler = (ws ? tu_ws_conn_handler : tu_tcp_conn_handler);
 #if CS_PLATFORM == CS_P_ESP8266
   mg_lwip_set_keepalive_params(nc, s_tcfg->keepalive.idle,
@@ -459,7 +528,28 @@ static void tu_set_conn(struct mg_connection *nc, bool ws) {
 #endif
   s_last_tcp_status_report = mg_time();
   if (s_tcfg->rx_buf_size > 0) nc->recv_mbuf_limit = s_tcfg->rx_buf_size;
-  s_conn = nc;
+  s_tu_conn.conn = nc;
+  s_tu_conn.type = TU_CONN_TYPE_TCP;
+  if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
+    mgos_uart_set_rx_enabled(s_ucfg->uart_no, true);
+  }
+}
+
+void tu_set_conn_bt_gatts(struct tu_bt_conn *tubc) {
+  LOG(LL_INFO, ("New bt conn"));
+  if (s_tu_conn.type != TU_CONN_TYPE_NONE) {
+    if (mgos_sys_config_get_tu_evict_old()) {
+      LOG(LL_INFO, ("Evicting %s", stringify_tu_conn(&s_tu_conn)));
+      close_cur_conn();
+    } else {
+      LOG(LL_INFO, ("Conn is already in place, dropping new bt conn"));
+      tu_bt_close(tubc);
+      return;
+    }
+  }
+
+  s_tu_conn.tubc = tubc;
+  s_tu_conn.type = TU_CONN_TYPE_BT_GATTS;
   if (s_ucfg != NULL && s_ucfg->rx_throttle_when_no_net) {
     mgos_uart_set_rx_enabled(s_ucfg->uart_no, true);
   }
@@ -473,20 +563,19 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data,
       mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
                           MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
       LOG(LL_INFO, ("%p Connection from %s", nc, addr));
-      if (s_conn != NULL && !s_tcfg->evict_old) {
-        LOG(LL_INFO, ("%p already in place, dropping %p", s_conn, nc));
+      if (s_tu_conn.type != TU_CONN_TYPE_NONE &&
+          !mgos_sys_config_get_tu_evict_old()) {
+        LOG(LL_INFO, ("The connection is already in place, dropping %p", nc));
         if (s_tcfg->listener.ws.enable) {
-          mg_sock_addr_to_str(&s_conn->sa, addr, sizeof(addr),
-                              MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
           mg_send_response_line(nc, 409, "Content-Type: text/plain\r\n");
-          mg_printf(nc, "Existing connection: %s\r\n", addr);
+          mg_printf(nc, "There is an existing connection\r\n");
           nc->flags |= MG_F_SEND_AND_CLOSE;
         } else {
           nc->flags |= MG_F_CLOSE_IMMEDIATELY;
         }
       } else {
         if (!s_tcfg->listener.ws.enable) {
-          tu_set_conn(nc, false /* ws */);
+          tu_set_conn_tcp(nc, false /* ws */);
         } else {
           /* Wait for handshake */
         }
@@ -499,16 +588,16 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data,
     }
     case MG_EV_WEBSOCKET_HANDSHAKE_DONE: {
       LOG(LL_INFO, ("%p WS handshake done", nc));
-      tu_set_conn(nc, true /* ws */);
+      tu_set_conn_tcp(nc, true /* ws */);
       break;
     }
     case MG_EV_CONNECT: {
       int res = *((int *) ev_data);
       LOG(LL_INFO, ("%p Connect result: %d", nc, res));
       if (res == 0) {
-        if (s_conn == NULL) {
+        if (s_tu_conn.type == TU_CONN_TYPE_NONE) {
           if (!s_tcfg->client.ws.enable) {
-            tu_set_conn(nc, false /* ws */);
+            tu_set_conn_tcp(nc, false /* ws */);
           } else {
             char *uri = strdup(s_tcfg->client.ws.uri);
             mgos_expand_mac_address_placeholders(uri);
@@ -521,7 +610,8 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data,
         } else {
           /* We already have a connection (probably accepted one while
            * connecting), drop it. */
-          LOG(LL_INFO, ("%p Already have %p, closing this one", nc, s_conn));
+          LOG(LL_INFO, ("%p Already have %p, closing this one", nc,
+                        stringify_tu_conn(&s_tu_conn)));
           nc->flags |= MG_F_CLOSE_IMMEDIATELY;
         }
       } else {
@@ -543,9 +633,10 @@ static void tu_conn_mgr(struct mg_connection *nc, int ev, void *ev_data,
 
 static void tu_conn_mgr_timer_cb(void *arg) {
   check_beeper();
-  report_status(s_conn, 0 /* force */);
+  /* TODO(dfrank): report status needs not only mongoose conn */
+  report_status(s_tu_conn.conn, 0 /* force */);
   /* Initiate outgoing connection, if configured. */
-  if (s_conn == NULL && s_client_conn == NULL &&
+  if (s_tu_conn.type == TU_CONN_TYPE_NONE && s_client_conn == NULL &&
       s_tcfg->client.remote_addr != NULL &&
       (mg_time() - s_last_connect_attempt) >=
           s_tcfg->client.reconnect_interval) {
@@ -576,12 +667,34 @@ enum mgos_app_init_result tu_processor_init(void) {
   return MGOS_APP_INIT_SUCCESS;
 }
 
+bool bt_rx_cb(struct mg_str value) {
+  int len = MIN((int) value.len, mgos_sys_config_get_tu_bt_rx_buf_size());
+  if (len != (int) value.len) {
+    /*
+     * We won't be able to handle all data, so, refuse to write it at all,
+     * so that the client will be able to resend the request again and have
+     * consistent data.
+     */
+    return false;
+  }
+
+  mbuf_append(&s_bt_buf_rx, value.p, len);
+  tu_dispatch_to_uart(&s_bt_buf_rx, s_ucfg->uart_no);
+  return true;
+}
+
 enum mgos_app_init_result mgos_app_init(void) {
+  mbuf_init(&s_bt_buf_rx, 0);
+
+  tu_bt_set_rx_cb(bt_rx_cb);
+  tu_bt_set_conn_cb(tu_set_conn_bt_gatts);
+
   s_mcfg = mgos_sys_config_get_misc();
   s_last_activity = mg_time();
   LOG(LL_INFO, ("TCPUART init"));
   if (!init_tcp(mgos_sys_config_get_tcp())) return MGOS_APP_INIT_ERROR;
   if (!init_uart(mgos_sys_config_get_uart())) return MGOS_APP_INIT_ERROR;
+  tu_bt_service_init();
   tu_uart_processor = tu_process_uart;
   return tu_processor_init();
 }

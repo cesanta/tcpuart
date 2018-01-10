@@ -13,5 +13,9 @@ config_schema:
   - ["uart.rts_gpio", "i", -1, {"hide": true}]
 
 libs:
+  - origin: https://github.com/mongoose-os-libs/bt-common
   - origin: https://github.com/mongoose-os-libs/dns-sd
   - origin: https://github.com/mongoose-os-libs/pwm
+
+sources:
+  - src/bt_svc/bt_svc_esp32.c

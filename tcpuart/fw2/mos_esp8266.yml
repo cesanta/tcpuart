@@ -22,3 +22,6 @@ build_vars:
 libs:
   - origin: https://github.com/mongoose-os-libs/dns-sd
   - origin: https://github.com/mongoose-os-libs/pwm
+
+sources:
+  - src/bt_svc/bt_svc_dummy.c

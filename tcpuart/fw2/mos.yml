@@ -15,6 +15,14 @@ config_schema:
   - ["wifi.ap.ssid", "TCPUART_??????"]
   - ["wifi.ap.pass", ""]
 
+  - ["tu", "o", {"title": "TCPUART settings"}]
+  - ["tu.evict_old", "b", true, {"title": "New connection evicts old"}]
+
+  - ["tu.bt", "o", {"title": "TCPUART bluetooth settings"}]
+  - ["tu.bt.tx_buf_size", "i", 2048, {"title": "TX buffer size"}]
+  - ["tu.bt.rx_buf_size", "i", 2048, {"title": "RX buffer size"}]
+  - ["tu.bt.need_confirm", "b", true, {"title": "Whether the data confirmations are needed. Setting to false speeds transmission up but can cause data loss."}]
+
   - ["tcp", "o", {"title": "TCP settings"}]
   - ["tcp.listener", "o", {"title": "Listener"}]
   - ["tcp.listener.port", "i", 8910, {"title": "Port; -1 to disable"}]
@@ -37,7 +45,6 @@ config_schema:
   - ["tcp.keepalive", "o", {"title": "Keepalive"}]
   - ["tcp.rx_buf_size", "i", 2048, {"title": "RX buffer size"}]
   - ["tcp.tx_buf_size", "i", 2048, {"title": "TX buffer size"}]
-  - ["tcp.evict_old", "b", true, {"title": "New connection evicts old"}]
   - ["tcp.status_interval_ms", "i", 1000, {"title": "Status interval (ms)"}]
 
   - ["uart", "o", {"title": "UART settings"}]

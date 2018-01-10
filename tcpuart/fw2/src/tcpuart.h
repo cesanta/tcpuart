@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016 Cesanta Software Limited
+ * Copyright (c) 2014-2018 Cesanta Software Limited
  * All rights reserved
  */
 
@@ -15,12 +15,24 @@
 extern "C" {
 #endif
 
+enum tu_conn_type {
+  TU_CONN_TYPE_NONE,
+  TU_CONN_TYPE_TCP,
+  TU_CONN_TYPE_BT_GATTS,
+};
+
+struct tu_conn {
+  enum tu_conn_type type;
+  struct mg_connection *conn;
+  struct tu_bt_conn *tubc;
+};
+
 /*
  * A hook to pre-process data in the UART buffer.
  * An app based on TCPUART can perform local processing of some data this way.
  * Default implementation does nothing and just forwards everything.
  */
-typedef void (*tu_uart_processor_fn)(int uart_no, struct mg_connection *nc);
+typedef void (*tu_uart_processor_fn)(int uart_no, struct tu_conn *tu_conn);
 extern tu_uart_processor_fn tu_uart_processor;
 
 enum mgos_app_init_result tu_processor_init(void);
