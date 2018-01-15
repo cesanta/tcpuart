@@ -15,6 +15,7 @@ config_schema:
 libs:
   - origin: https://github.com/mongoose-os-libs/bt-common
   - origin: https://github.com/mongoose-os-libs/dns-sd
+  - origin: https://github.com/mongoose-os-libs/ethernet
   - origin: https://github.com/mongoose-os-libs/pwm
 
 sources:
