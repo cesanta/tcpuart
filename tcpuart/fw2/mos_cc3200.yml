@@ -1,5 +1,0 @@
-config_schema:
-  - ["tcp.keepalive.enable", "b", true, {"title": "Enable TCP keepalive"}]
-
-sources:
-  - src/bt_svc/bt_svc_dummy.c
